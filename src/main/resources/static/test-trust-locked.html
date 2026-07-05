@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投信鎖碼測試</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);
+        }
+        .test-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #6f42c1;
+            margin-top: 0;
+            border-bottom: 3px solid #6f42c1;
+            padding-bottom: 15px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        .loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+        .stock-list {
+            margin: 20px 0;
+        }
+        .stock-item {
+            padding: 15px;
+            margin: 10px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #6f42c1;
+            transition: all 0.3s;
+        }
+        .stock-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+        .stock-symbol {
+            font-size: 20px;
+            font-weight: bold;
+            color: #6f42c1;
+        }
+        .stock-price {
+            font-size: 18px;
+            margin: 5px 0;
+        }
+        .stock-change {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .positive { background: #dc2626; color: white; }
+        .negative { background: #16a34a; color: white; }
+        .stock-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        .info-item {
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .info-label {
+            color: #6c757d;
+            font-size: 11px;
+        }
+        .info-value {
+            font-weight: bold;
+            color: #333;
+        }
+        button {
+            background: #6f42c1;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+            margin: 5px;
+        }
+        button:hover {
+            background: #5a32a3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(111, 66, 193, 0.4);
+        }
+        .log {
+            background: #263238;
+            color: #aed581;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+        }
+        .conclusion {
+            font-size: 18px;
+            margin-top: 10px;
+        }
+    </style>
+    <link rel="stylesheet" href="dark-mode.css">
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+    <div class="test-card">
+        <h1>🎯 投信鎖碼區測試</h1>
+
+        <div id="status" class="status loading">⏳ 準備載入投信鎖碼數據...</div>
+
+        <div class="stock-list" id="stock-list">
+            <!-- 股票列表將動態載入 -->
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="testTrustLocked()">🔄 重新測試</button>
+            <button onclick="window.location.href='/'">🏠 返回主頁</button>
+        </div>
+
+        <div class="log">
+            <div class="log-entry">📋 測試日誌：</div>
+            <div id="log-container"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const timestamp = new Date().toLocaleTimeString();
+            const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.style.color = type === 'success' ? '#aed581' : type === 'error' ? '#ff5252' : '#81d4fa';
+            entry.innerText = `${timestamp} ${icon} ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function testTrustLocked() {
+            const statusEl = document.getElementById('status');
+            const listEl = document.getElementById('stock-list');
+
+            log('開始測試投信鎖碼 API...');
+            statusEl.className = 'status loading';
+            statusEl.innerText = '⏳ 正在載入投信鎖碼數據...';
+            listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">載入中...</div>';
+
+            try {
+                log('發送請求到: /api/stocks/trust-locked?top=5');
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 15000);
+
+                const response = await fetch('/api/stocks/trust-locked?top=5',
+                    { signal: controller.signal });
+                clearTimeout(timer);
+
+                log(`收到響應，狀態碼: ${response.status}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                log(`數據解析成功: 共 ${data.length} 筆記錄`, 'success');
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暫無符合條件的投信鎖碼標的</div>';
+                    statusEl.className = 'status success';
+                    statusEl.innerText = '✅ 載入完成（無數據）';
+                    log('無符合條件的鎖碼標的', 'success');
+                    return;
+                }
+
+                listEl.innerHTML = '';
+                data.forEach((stock, index) => {
+                    const changeVal = stock.changeValue ?? 0;
+                    const changeClass = changeVal > 0 ? 'positive' : changeVal < 0 ? 'negative' : '';
+
+                    const item = document.createElement('div');
+                    item.className = 'stock-item';
+                    item.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span class="stock-symbol">${stock.symbol}</span>
+                                <span class="conclusion">${stock.conclusion || ''}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="stock-price">$${stock.price || '-'}</div>
+                                <span class="stock-change ${changeClass}">${stock.change || '0.00%'}</span>
+                            </div>
+                        </div>
+                        <div class="stock-info">
+                            <div class="info-item">
+                                <div class="info-label">投信評分</div>
+                                <div class="info-value" style="color:#6f42c1;">${stock.trustScore || 0} 分</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">總分</div>
+                                <div class="info-value">${stock.totalScore || 0} 分</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">連買天數</div>
+                                <div class="info-value">${stock.consecutiveDays || stock.continuousDays || 0} 天</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">鎖碼比例</div>
+                                <div class="info-value">${stock.lockRatio || 0}%</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">RSI</div>
+                                <div class="info-value">${stock.rsi || '-'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">最新投信買超</div>
+                                <div class="info-value">${(stock.latestTrustBuy || 0).toLocaleString()} 張</div>
+                            </div>
+                        </div>
+                    `;
+                    listEl.appendChild(item);
+
+                    log(`#${index + 1} ${stock.symbol}: 評分=${stock.trustScore}, 連買=${stock.consecutiveDays}天`, 'success');
+                });
+
+                statusEl.className = 'status success';
+                statusEl.innerText = `✅ 成功載入 ${data.length} 筆投信鎖碼標的`;
+                log(`投信鎖碼載入完成，共 ${data.length} 筆`, 'success');
+
+            } catch (error) {
+                log(`載入失敗: ${error.message}`, 'error');
+
+                listEl.innerHTML = `<div style="text-align:center;padding:20px;color:#dc2626;">
+                    載入失敗：${error.message}
+                </div>`;
+
+                statusEl.className = 'status error';
+                statusEl.innerText = `❌ 載入失敗: ${error.message}`;
+            }
+        }
+
+        // 頁面載入時自動測試
+        window.onload = function() {
+            log('頁面載入完成');
+            setTimeout(() => {
+                testTrustLocked();
+            }, 500);
+        };
+    </script>
+<script>
+(function(){
+    var k='stockpredictor-theme';
+    function g(){var s=localStorage.getItem(k);if(s)return s;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    function a(t){document.documentElement.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b)b.textContent=t==='dark'?'☀️':'🌙';}
+    window.toggleTheme=function(){var c=document.documentElement.getAttribute('data-theme')||'light';var n=c==='dark'?'light':'dark';localStorage.setItem(k,n);a(n);};
+    a(g());
+})();
+</script>
+</body>
+</html>

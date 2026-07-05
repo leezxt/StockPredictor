@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Enter 鍵測試</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 50px;
+            background: #f5f5f5;
+        }
+        .test-box {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        input {
+            width: 200px;
+            padding: 12px;
+            font-size: 18px;
+            border: 2px solid #4CAF50;
+            border-radius: 4px;
+        }
+        button {
+            padding: 12px 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 10px;
+        }
+        button:hover { background-color: #45a049; }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f5e9;
+            border-radius: 4px;
+            display: none;
+        }
+        #console {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #263238;
+            color: #aed581;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log { margin: 5px 0; }
+        .log-info { color: #81c784; }
+        .log-error { color: #ef5350; }
+        .log-success { color: #66bb6a; font-weight: bold; }
+    </style>
+    <link rel="stylesheet" href="dark-mode.css">
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+    <div style="margin:0 0 16px 0;max-width:600px;margin-left:auto;margin-right:auto;">
+        <a href="index.html" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:1px solid #ccc;border-radius:8px;color:#555;text-decoration:none;font-size:14px;font-weight:600;background:#fff;">← 返回主頁</a>
+    </div>
+    <div class="test-box">
+        <h1>🧪 Enter 鍵輸入測試</h1>
+        <p>在下方輸入框中輸入股票代碼後按 <strong>Enter 鍵</strong>，或點擊按鈕測試：</p>
+
+        <div>
+            <input type="text" id="stockId" value="2330" placeholder="輸入股票代碼">
+            <button onclick="testAnalysis()">測試分析</button>
+        </div>
+
+        <div id="result">
+            <h3>✅ 分析結果</h3>
+            <p id="result-text"></p>
+        </div>
+
+        <div id="console">
+            <div class="log log-info">📋 控制台日誌：</div>
+        </div>
+    </div>
+
+    <script>
+        const consoleEl = document.getElementById('console');
+
+        function log(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log log-' + type;
+            logEntry.innerText = `${new Date().toLocaleTimeString()} - ${message}`;
+            consoleEl.appendChild(logEntry);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            console.log(message);
+        }
+
+        async function testAnalysis() {
+            const id = document.getElementById('stockId').value.trim();
+            log(`🎯 testAnalysis 被調用，股票代碼: ${id}`, 'info');
+
+            if (!id) {
+                log('❌ 股票代碼為空', 'error');
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            try {
+                log('📡 發送 API 請求...', 'info');
+                const response = await fetch(`/api/stocks/${id}/ma`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                log(`✅ API 響應成功: ${JSON.stringify(data)}`, 'success');
+
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('result-text').innerHTML = `
+                    <strong>股票代碼:</strong> ${data.symbol}<br>
+                    <strong>MA5:</strong> ${data.ma5}<br>
+                    <strong>MA20:</strong> ${data.ma20}<br>
+                    <strong>建議:</strong> ${data.advice}
+                `;
+            } catch (error) {
+                log(`❌ 錯誤: ${error.message}`, 'error');
+                alert('分析失敗: ' + error.message);
+            }
+        }
+
+        // 綁定 Enter 鍵
+        window.onload = function() {
+            log('🚀 頁面已加載', 'info');
+            const stockInput = document.getElementById('stockId');
+
+            if (stockInput) {
+                log('✅ 成功找到輸入框元素', 'success');
+
+                stockInput.addEventListener('keypress', function(event) {
+                    log(`⌨️ 按鍵按下: ${event.key} (keyCode: ${event.keyCode})`, 'info');
+
+                    if (event.key === 'Enter') {
+                        log('🎉 Enter 鍵被檢測到！執行分析...', 'success');
+                        event.preventDefault();
+                        testAnalysis();
+                    }
+                });
+
+                log('✅ Enter 鍵監聽器已綁定', 'success');
+            } else {
+                log('❌ 找不到輸入框元素', 'error');
+            }
+        };
+    </script>
+<script>
+(function(){
+    var k='stockpredictor-theme';
+    function g(){var s=localStorage.getItem(k);if(s)return s;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    function a(t){document.documentElement.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b)b.textContent=t==='dark'?'☀️':'🌙';}
+    window.toggleTheme=function(){var c=document.documentElement.getAttribute('data-theme')||'light';var n=c==='dark'?'light':'dark';localStorage.setItem(k,n);a(n);};
+    a(g());
+})();
+</script>
+</body>
+</html>

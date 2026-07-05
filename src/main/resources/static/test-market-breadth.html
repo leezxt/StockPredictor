@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>市場廣度測試</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .test-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        .loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+        .breadth-display {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .breadth-value {
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+        .progress-container {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            transition: width 0.5s ease, background-color 0.5s ease;
+            border-radius: 15px;
+        }
+        .detail-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #0d6efd;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .log {
+            background: #263238;
+            color: #aed581;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+        }
+    </style>
+    <link rel="stylesheet" href="dark-mode.css">
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+    <div class="test-card">
+        <h1>🎯 市場廣度測試頁面</h1>
+
+        <div id="status" class="status loading">⏳ 準備載入市場廣度數據...</div>
+
+        <div class="breadth-display">
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 10px;">市場廣度指標</div>
+            <div id="breadth-value" class="breadth-value">--%</div>
+            <div class="progress-container">
+                <div id="breadth-bar" class="progress-bar" style="width: 0%; background-color: #9ca3af;"></div>
+            </div>
+            <div id="breadth-comment" style="color: #666; font-size: 16px; margin-top: 15px;">
+                等待載入...
+            </div>
+        </div>
+
+        <div id="detail-info" class="detail-info" style="display: none;">
+            <strong>詳細資訊：</strong><br>
+            多頭標的：<span id="bullish-count">-</span> /
+            總標的：<span id="eligible-count">-</span><br>
+            API 端點：<code>/api/market/breadth</code>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="testMarketBreadth()">🔄 重新測試</button>
+            <button onclick="window.location.href='/'">🏠 返回主頁</button>
+        </div>
+
+        <div class="log">
+            <div class="log-entry">📋 測試日誌：</div>
+            <div id="log-container"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const timestamp = new Date().toLocaleTimeString();
+            const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.style.color = type === 'success' ? '#aed581' : type === 'error' ? '#ff5252' : '#81d4fa';
+            entry.innerText = `${timestamp} ${icon} ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function testMarketBreadth() {
+            const statusEl = document.getElementById('status');
+            const valueEl = document.getElementById('breadth-value');
+            const barEl = document.getElementById('breadth-bar');
+            const commentEl = document.getElementById('breadth-comment');
+            const detailEl = document.getElementById('detail-info');
+
+            log('開始測試市場廣度 API...');
+            statusEl.className = 'status loading';
+            statusEl.innerText = '⏳ 正在載入市場廣度數據...';
+
+            try {
+                log('發送請求到: /api/market/breadth');
+                const response = await fetch('/api/market/breadth');
+
+                log(`收到響應，狀態碼: ${response.status}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                log(`數據解析成功: ${JSON.stringify(data)}`, 'success');
+
+                const breadth = Number(data.breadth ?? 0);
+                const eligible = Number(data.eligibleCount ?? 0);
+                const bullish = Number(data.bullishCount ?? 0);
+                const safeBreadth = Number.isFinite(breadth) ? Math.max(0, Math.min(100, breadth)) : 0;
+
+                valueEl.innerText = `${safeBreadth.toFixed(1)}%`;
+                barEl.style.width = `${safeBreadth}%`;
+
+                if (safeBreadth >= 70) {
+                    barEl.style.backgroundColor = '#16a34a';
+                    commentEl.innerText = '🚀 多數標的呈現多頭排列，市場環境偏多';
+                } else if (safeBreadth >= 45) {
+                    barEl.style.backgroundColor = '#0d6efd';
+                    commentEl.innerText = '📊 市場結構中性偏強，適合等待明確突破';
+                } else if (safeBreadth >= 25) {
+                    barEl.style.backgroundColor = '#f59e0b';
+                    commentEl.innerText = '⚠️ 市場廣度偏弱，建議控制部位';
+                } else {
+                    barEl.style.backgroundColor = '#dc2626';
+                    commentEl.innerText = '🔻 市場環境偏空，廣度不足';
+                }
+
+                commentEl.innerText += ` (${bullish}/${eligible} 標的)`;
+
+                document.getElementById('bullish-count').innerText = bullish;
+                document.getElementById('eligible-count').innerText = eligible;
+                detailEl.style.display = 'block';
+
+                statusEl.className = 'status success';
+                statusEl.innerText = '✅ 市場廣度載入成功！';
+                log(`市場廣度: ${safeBreadth.toFixed(1)}%, 多頭標的: ${bullish}/${eligible}`, 'success');
+
+            } catch (error) {
+                log(`載入失敗: ${error.message}`, 'error');
+
+                valueEl.innerText = '--%';
+                barEl.style.width = '0%';
+                barEl.style.backgroundColor = '#9ca3af';
+                commentEl.innerText = '市場廣度載入失敗，請稍後重試。';
+
+                statusEl.className = 'status error';
+                statusEl.innerText = `❌ 載入失敗: ${error.message}`;
+
+                detailEl.style.display = 'none';
+            }
+        }
+
+        // 頁面載入時自動測試
+        window.onload = function() {
+            log('頁面載入完成');
+            setTimeout(() => {
+                testMarketBreadth();
+            }, 500);
+        };
+    </script>
+<script>
+(function(){
+    var k='stockpredictor-theme';
+    function g(){var s=localStorage.getItem(k);if(s)return s;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    function a(t){document.documentElement.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b)b.textContent=t==='dark'?'☀️':'🌙';}
+    window.toggleTheme=function(){var c=document.documentElement.getAttribute('data-theme')||'light';var n=c==='dark'?'light':'dark';localStorage.setItem(k,n);a(n);};
+    a(g());
+})();
+</script>
+</body>
+</html>

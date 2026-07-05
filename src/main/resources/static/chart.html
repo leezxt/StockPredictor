@@ -1,0 +1,3379 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>股市趨勢視覺化</title>
+    <!-- 引入 Chart.js 和日期適配器 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+    <!-- 引入 K 線圖專用外掛 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <script src="chart-utils.js"></script>
+    <script src="price-chart-renderer.js"></script>
+    <style>
+        :root {
+            --chart-primary: #2563eb;
+            --chart-primary-dark: #1d4ed8;
+            --chart-purple: #7c3aed;
+            --chart-bg: #eef2ff;
+            --chart-card: #ffffff;
+            --chart-text: #172033;
+            --chart-muted: #64748b;
+            --chart-border: #dbe3f0;
+            --chart-shadow: 0 18px 45px rgba(30, 64, 175, 0.10);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+            color: var(--chart-text);
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 34rem),
+                linear-gradient(180deg, #f8fafc 0%, var(--chart-bg) 100%);
+            margin: 0;
+            min-height: 100vh;
+        }
+        .page-shell {
+            width: min(1480px, 100%);
+            margin: 0 auto;
+            padding: 20px clamp(12px, 2.5vw, 32px) 40px;
+        }
+        .container {
+            width: 100%;
+            margin: 0;
+            padding: clamp(16px, 2.4vw, 30px);
+            border: 1px solid rgba(219, 227, 240, 0.9);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: var(--chart-shadow);
+        }
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+        .page-title { margin: 0; font-size: clamp(1.65rem, 3vw, 2.45rem); color: #172554; }
+        .page-subtitle { margin: 7px 0 0; color: var(--chart-muted); font-size: 0.95rem; }
+        .top-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 14px;
+            border: 1px solid var(--chart-border);
+            border-radius: 10px;
+            color: #334155;
+            background: rgba(255,255,255,0.9);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .nav {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 2px 0 12px;
+            margin-bottom: 12px;
+            scrollbar-width: thin;
+        }
+        .nav a {
+            flex: 0 0 auto;
+            padding: 9px 14px;
+            border-radius: 10px;
+            color: #334155;
+            background: #f1f5f9;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .nav a[href="chart.html"] { color: #fff; background: var(--chart-primary); }
+        .control-panel {
+            display: grid;
+            grid-template-columns: minmax(190px, 1fr) auto;
+            gap: 14px;
+            padding: 16px;
+            border: 1px solid var(--chart-border);
+            border-radius: 16px;
+            background: #f8fafc;
+        }
+        .symbol-control { display: flex; gap: 10px; min-width: 0; }
+        .symbol-control input {
+            width: 100%;
+            min-width: 0;
+            padding: 11px 13px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #fff;
+            font-size: 16px;
+            outline: none;
+        }
+        .symbol-control input:focus { border-color: var(--chart-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+        .chart-actions, .overlay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .chart-actions { grid-column: 1 / -1; }
+        button, select {
+            min-height: 40px;
+            padding: 9px 13px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            font: inherit;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        button { cursor: pointer; color: #fff; background: var(--chart-primary); }
+        button:hover { background: var(--chart-primary-dark); }
+        button.secondary { color: #334155; background: #fff; border-color: #cbd5e1; }
+        button.purple { background: var(--chart-purple); }
+        select { color: #334155; background: #fff; border-color: #cbd5e1; }
+        .overlay-controls label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-height: 38px;
+            padding: 7px 10px;
+            border: 1px solid #dbe3f0;
+            border-radius: 9px;
+            background: #fff;
+            color: #475569;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .overlay-controls input { margin: 0; accent-color: var(--chart-primary); }
+        .stock-name {
+            min-height: 26px;
+            margin: 12px 4px 0;
+            color: #1e3a8a;
+            font-weight: 800;
+            text-align: left;
+        }
+        .chart-stack {
+            margin-top: 16px;
+        }
+        .chart-panel {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--chart-border);
+            border-radius: 16px;
+            background: var(--chart-card);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        }
+        .main-chart-panel {
+            height: clamp(340px, 52vw, 620px);
+            padding: 12px;
+        }
+        .volume-chart-panel {
+            position: relative;
+            height: clamp(150px, 19vw, 230px);
+            margin-top: 12px;
+            padding: 10px 12px;
+            display: none;
+        }
+        .institutional-chart-panel {
+            position: relative;
+            height: clamp(260px, 35vw, 420px);
+            margin-top: 12px;
+            padding: 10px 12px;
+            display: none;
+        }
+        .macd-chart-panel {
+            position: relative;
+            height: clamp(210px, 26vw, 310px);
+            margin-top: 12px;
+            padding: 10px 12px 36px;
+            display: none;
+        }
+        .analysis-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: 16px; margin-top: 18px; }
+        .analysis-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+        #status-box {
+            border: 1px solid var(--chart-border);
+            padding: 16px;
+            border-radius: 14px;
+            margin: 0;
+            background-color: #f8fafc;
+            text-align: left;
+        }
+        #status-box h3 { margin: 0 0 6px; font-size: 1em; }
+        #status-box p  { margin: 4px 0; font-size: 0.92em; color: #444; }
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        .institutional-note {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 8px;
+        }
+        @media (max-width: 900px) {
+            .analysis-grid { grid-template-columns: 1fr; }
+            .control-panel { grid-template-columns: 1fr; }
+            .symbol-control { grid-column: 1; }
+            .page-header { align-items: flex-start; }
+        }
+        @media (max-width: 600px) {
+            .page-shell { padding: 10px 8px 24px; }
+            .container { padding: 13px; border-radius: 16px; }
+            .page-header { display: block; }
+            .top-link { margin-bottom: 12px; }
+            .page-subtitle { font-size: 0.86rem; }
+            .symbol-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+            .chart-actions { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; }
+            .chart-actions button, .chart-actions select, .chart-actions .overlay-controls { flex: 0 0 auto; }
+            .overlay-controls { flex-wrap: nowrap; }
+            .main-chart-panel { height: 390px; padding: 5px; }
+            .volume-chart-panel { height: 175px; padding: 5px; }
+            .institutional-chart-panel { height: 300px; padding: 5px; }
+            .macd-chart-panel { height: 235px; padding: 5px 5px 34px; }
+        }
+    </style>
+    <link rel="stylesheet" href="dark-mode.css">
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+    <main class="page-shell">
+    <div class="page-header">
+        <div>
+            <a href="index.html" class="top-link">← 返回主頁</a>
+            <h1 class="page-title">股價走勢與價量分析</h1>
+            <p class="page-subtitle">支援桌機、平板與手機；圖表自動排除沒有成交量的日期。</p>
+        </div>
+    </div>
+    <div class="container">
+        <div class="nav">
+            <a href="index.html">均線分析</a>
+            <a href="chart.html">股價走勢</a>
+            <a href="kline-analysis.html">K線掃描分析</a>
+            <a href="/h2-console" target="_blank" title="H2 資料庫管理控制台">資料庫</a>
+        </div>
+
+        <div class="control-panel">
+            <div class="symbol-control">
+            <label for="stockId" class="visually-hidden">股票代碼</label>
+            <input type="text" id="stockId" value="2330" placeholder="輸入股票代碼" oninput="scheduleNameLookup(); scheduleAutoChartUpdate()">
+            <button onclick="updateChart()">更新圖表</button>
+            </div>
+            <div class="chart-actions">
+            <button onclick="drawCandlestick()">K線 + 量</button>
+            <button onclick="updateChartWithVolume()">價量圖</button>
+            <button onclick="drawBollinger()">布林通道</button>
+            <button onclick="showInstitutionalOnly()" class="purple">法人買賣超</button>
+            <button onclick="resetZoomPan()" class="secondary">重置縮放</button>
+            <label for="timeframeSelect" class="visually-hidden">K線週期</label>
+            <select id="timeframeSelect" onchange="handleTimeframeChange()" title="K線週期切換">
+                <option value="day">日線</option>
+                <option value="week">週線</option>
+                <option value="month">月線</option>
+            </select>
+            <div class="overlay-controls">
+            <label><input type="checkbox" id="toggleMA5" checked onchange="handleOverlayToggle()">MA5</label>
+            <label><input type="checkbox" id="toggleMA20" checked onchange="handleOverlayToggle()">MA20</label>
+            <label><input type="checkbox" id="toggleMA60" checked onchange="handleOverlayToggle()">MA60</label>
+            <label><input type="checkbox" id="toggleMA120" checked onchange="handleOverlayToggle()">MA120</label>
+            </div>
+            </div>
+        </div>
+        <div id="stockName" class="stock-name"></div>
+        <div id="tradingDayNote" class="institutional-note" style="text-align:left;margin:0 4px 10px;">圖表只顯示有成交量的交易日</div>
+
+        <div class="chart-stack">
+            <div class="chart-panel main-chart-panel">
+                <canvas id="myChart"></canvas>
+            </div>
+            <div id="volumeChartPanel" class="chart-panel volume-chart-panel">
+                <canvas id="volumeChart"></canvas>
+            </div>
+            <div id="institutionalChartPanel" class="chart-panel institutional-chart-panel">
+                <canvas id="institutionalChart"></canvas>
+            </div>
+            <div id="macdChartPanel" class="chart-panel macd-chart-panel">
+                <canvas id="macdChart"></canvas>
+                <div id="macd-chart-note" class="institutional-note">等待載入 MACD 資料</div>
+            </div>
+
+            <div class="analysis-grid">
+                <div id="status-box">
+                    <h3>等待分析資料...</h3>
+                </div>
+                <div class="analysis-side">
+                    <div class="market-breadth-card" style="padding:10px;">
+                        <div class="d-flex justify-content-between">
+                            <strong>市場環境濾網 (廣度)</strong>
+                            <span id="chart-breadth-value" class="fw-bold">--%</span>
+                        </div>
+                        <div class="progress mt-2" style="height: 12px;">
+                            <div id="chart-breadth-bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                        </div>
+                        <div id="chart-breadth-comment" class="small text-muted" style="margin-top:8px;">載入中…</div>
+                    </div>
+                    <div style="border: 2px solid #ccc; border-radius: 10px; background-color: #f9f9f9; padding: 12px; display: flex; flex-direction:column; gap:8px; min-height: 200px;">
+                        <!-- 雷達圖評分橫幅 -->
+                        <div id="radar-score-banner" style="display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:6px; background:#f1f5f9; border:1px solid #e2e8f0;">
+                            <div style="text-align:center; min-width:48px;">
+                                <div id="radar-total-score" style="font-size:1.6em; font-weight:bold; color:#64748b; line-height:1;">--</div>
+                                <div style="font-size:9px; color:#94a3b8;">綜合分</div>
+                            </div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+                                    <div style="flex:1; height:6px; border-radius:3px; background:#e2e8f0; overflow:hidden;">
+                                        <div id="radar-score-bar" style="height:100%; width:0%; border-radius:3px; background:#64748b; transition:width 0.4s ease, background 0.4s ease;"></div>
+                                    </div>
+                                    <span id="radar-label-badge" style="font-size:9px; padding:1px 5px; border-radius:8px; background:#ede9fe; color:#6f42c1; white-space:nowrap;">--</span>
+                                </div>
+                                <div id="radar-conclusion" style="font-size:10px; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">等待分析...</div>
+                            </div>
+                        </div>
+                        <canvas id="radarChart" style="max-height: 200px;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </main>
+
+    <script>
+        const STOCK_NAME_MAP = {
+            '2330': '台積電',
+            '2454': '聯發科',
+            '2317': '鴻海',
+            '2303': '聯電',
+            '2603': '長榮',
+            '2882': '國泰金',
+            '0050': '元大台灣50'
+        };
+
+        let myChart; // 用來存放圖表實例
+        let volumeChartInstance;
+        let institutionalChartInstance;
+        let macdChartInstance;
+        let radarChartInstance;
+        let chartUpdateTimer;
+        let nameTimer;
+        let activeChartMode = 'line';
+        let isHoverSyncing = false;
+        let isRangeSyncing = false;
+        const apiBaseUrl = window.location.protocol === 'file:'
+            ? `http://localhost:${localStorage.getItem('api-port') || '19090'}`
+            : '';
+
+        Chart.register({
+            id: 'crosshairGuide',
+            afterDatasetsDraw(chart) {
+                const activeElements = typeof chart.getActiveElements === 'function'
+                    ? chart.getActiveElements()
+                    : (chart.tooltip?.getActiveElements?.() || []);
+
+                if (!activeElements || activeElements.length === 0 || !chart.chartArea) {
+                    return;
+                }
+
+                const { ctx, chartArea } = chart;
+                const { top, bottom, left, right } = chartArea;
+                const { x, y } = activeElements[0].element;
+
+                ctx.save();
+                ctx.setLineDash([5, 4]);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+
+                if (x >= left && x <= right) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, top);
+                    ctx.lineTo(x, bottom);
+                    ctx.stroke();
+                }
+
+                if (y >= top && y <= bottom) {
+                    ctx.beginPath();
+                    ctx.moveTo(left, y);
+                    ctx.lineTo(right, y);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        });
+
+        function ensureFinancialPluginReady() {
+            const hasController = Boolean(
+                Chart?.registry?.controllers?.items?.candlestick ||
+                Chart?.registry?.getController?.('candlestick')
+            );
+            if (hasController) {
+                return true;
+            }
+
+            const registerTargets = [
+                window.CandlestickController,
+                window.CandlestickElement,
+                window.OhlcController,
+                window.OhlcElement
+            ].filter(Boolean);
+
+            if (registerTargets.length > 0) {
+                Chart.register(...registerTargets);
+            }
+
+            return Boolean(
+                Chart?.registry?.controllers?.items?.candlestick ||
+                Chart?.registry?.getController?.('candlestick')
+            );
+        }
+
+        function destroyMainChart() {
+            if (myChart) {
+                myChart.destroy();
+                myChart = null;
+            }
+        }
+
+        function destroyVolumeChart() {
+            if (volumeChartInstance) {
+                volumeChartInstance.destroy();
+                volumeChartInstance = null;
+            }
+        }
+
+        function destroyInstitutionalChart() {
+            if (institutionalChartInstance) {
+                institutionalChartInstance.destroy();
+                institutionalChartInstance = null;
+            }
+        }
+
+        function destroyMacdChart() {
+            if (macdChartInstance) {
+                macdChartInstance.destroy();
+                macdChartInstance = null;
+            }
+        }
+
+        function switchToSinglePanel() {
+            destroyVolumeChart();
+            destroyInstitutionalChart();
+            destroyMacdChart();
+            document.getElementById('volumeChartPanel').style.display = 'none';
+            document.getElementById('institutionalChartPanel').style.display = 'none';
+            document.getElementById('macdChartPanel').style.display = 'none';
+            resetStatusBox();
+        }
+
+        function switchToDualPanel() {
+            document.getElementById('volumeChartPanel').style.display = 'block';
+            document.getElementById('institutionalChartPanel').style.display = 'none';
+            document.getElementById('macdChartPanel').style.display = 'none';
+            resetStatusBox();
+        }
+
+        function switchToInstitutionalPanel() {
+            destroyVolumeChart();
+            destroyMacdChart();
+            document.getElementById('volumeChartPanel').style.display = 'none';
+            document.getElementById('institutionalChartPanel').style.display = 'block';
+            document.getElementById('macdChartPanel').style.display = 'none';
+            resetStatusBox();
+        }
+
+        function switchToMacdPanel() {
+            destroyVolumeChart();
+            destroyInstitutionalChart();
+            document.getElementById('volumeChartPanel').style.display = 'none';
+            document.getElementById('institutionalChartPanel').style.display = 'none';
+            document.getElementById('macdChartPanel').style.display = 'block';
+            resetStatusBox();
+        }
+
+        function resetStatusBox() {
+            const box = document.getElementById('status-box');
+            box.style.borderColor = '#ccc';
+            box.innerHTML = '<h3>請切換至「布林通道」以查看位置診斷</h3>';
+        }
+
+        function setActiveChartMode(mode) {
+            activeChartMode = mode;
+        }
+
+        function getSelectedTimeframe() {
+            return document.getElementById('timeframeSelect')?.value || 'day';
+        }
+
+        function isToggleEnabled(id) {
+            return Boolean(document.getElementById(id)?.checked);
+        }
+
+        function handleOverlayToggle() {
+            if (activeChartMode !== 'candlestick') {
+                return;
+            }
+            applyCandlestickOverlayVisibility();
+        }
+
+        function applyCandlestickOverlayVisibility() {
+            if (myChart) {
+                const ma5 = myChart.data.datasets.find(d => d.label === 'MA5');
+                const ma20 = myChart.data.datasets.find(d => d.label === 'MA20');
+                const ma60 = myChart.data.datasets.find(d => d.label === 'MA60');
+                const ma120 = myChart.data.datasets.find(d => d.label === 'MA120');
+                if (ma5) {
+                    ma5.hidden = !isToggleEnabled('toggleMA5');
+                }
+                if (ma20) {
+                    ma20.hidden = !isToggleEnabled('toggleMA20');
+                }
+                if (ma60) {
+                    ma60.hidden = !isToggleEnabled('toggleMA60');
+                }
+                if (ma120) {
+                    ma120.hidden = !isToggleEnabled('toggleMA120');
+                }
+                myChart.update('none');
+            }
+        }
+
+        function syncChartRange(sourceChart) {
+            if (!sourceChart || isRangeSyncing) {
+                return;
+            }
+
+            const min = sourceChart.scales?.x?.min;
+            const max = sourceChart.scales?.x?.max;
+            if (min == null || max == null) {
+                return;
+            }
+
+            isRangeSyncing = true;
+            try {
+                if (sourceChart !== myChart && myChart?.options?.scales?.x) {
+                    myChart.options.scales.x.min = min;
+                    myChart.options.scales.x.max = max;
+                    myChart.update('none');
+                }
+                if (sourceChart !== volumeChartInstance && volumeChartInstance?.options?.scales?.x) {
+                    volumeChartInstance.options.scales.x.min = min;
+                    volumeChartInstance.options.scales.x.max = max;
+                    volumeChartInstance.update('none');
+                }
+            } finally {
+                isRangeSyncing = false;
+            }
+        }
+
+        function buildZoomPluginOptions(sourceChartGetter) {
+            return {
+                limits: {
+                    x: { minRange: 3 * 24 * 60 * 60 * 1000 }
+                },
+                pan: {
+                    enabled: true,
+                    mode: 'x',
+                    threshold: 4,
+                    onPanComplete() {
+                        syncChartRange(sourceChartGetter());
+                    }
+                },
+                zoom: {
+                    wheel: { enabled: true, speed: 0.08 },
+                    drag: {
+                        enabled: true,
+                        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                        borderColor: 'rgba(37, 99, 235, 0.4)',
+                        borderWidth: 1
+                    },
+                    pinch: { enabled: true },
+                    mode: 'x',
+                    onZoomComplete() {
+                        syncChartRange(sourceChartGetter());
+                    }
+                }
+            };
+        }
+
+        function resetZoomPan() {
+            if (myChart?.resetZoom) {
+                myChart.resetZoom();
+            }
+            if (volumeChartInstance?.resetZoom) {
+                volumeChartInstance.resetZoom();
+            }
+
+            if (myChart?.options?.scales?.x) {
+                myChart.options.scales.x.min = undefined;
+                myChart.options.scales.x.max = undefined;
+                myChart.update('none');
+            }
+            if (volumeChartInstance?.options?.scales?.x) {
+                volumeChartInstance.options.scales.x.min = undefined;
+                volumeChartInstance.options.scales.x.max = undefined;
+                volumeChartInstance.update('none');
+            }
+        }
+
+        function handleTimeframeChange() {
+            if (activeChartMode === 'candlestick') {
+                drawCandlestick();
+            }
+        }
+
+        function formatNumber(value, digits = 2) {
+            return StockChartUtils.formatNumber(value, digits);
+        }
+
+        function formatSignedNumber(value, digits = 2) {
+            return StockChartUtils.formatSignedNumber(value, digits);
+        }
+
+        function formatSignedPercent(value, digits = 2) {
+            return StockChartUtils.formatSignedPercent(value, digits);
+        }
+
+        function formatVolume(value) {
+            return StockChartUtils.formatVolume(value);
+        }
+
+        function getYahooStyleVolumeColors(data) {
+            return PriceChartRenderer.getYahooStyleVolumeColors(data);
+        }
+
+        function parseTradingDate(value) {
+            return StockChartUtils.parseTradingDate(value);
+        }
+
+        function isValidPrice(value) {
+            return StockChartUtils.isValidPrice(value);
+        }
+
+        function normalizeTradingData(rawData) {
+            return StockChartUtils.normalizeTradingData(rawData);
+        }
+
+        function updateTradingDayNote(rawData, normalizedData) {
+            const rawCount = Array.isArray(rawData) ? rawData.length : 0;
+            const validCount = Array.isArray(normalizedData) ? normalizedData.length : 0;
+            const removedCount = Math.max(0, rawCount - validCount);
+            const note = document.getElementById('tradingDayNote');
+            if (!note) {
+                return;
+            }
+            note.textContent = removedCount > 0
+                ? `顯示 ${validCount} 個有效交易日，已排除 ${removedCount} 個無成交或無有效價格的日期`
+                : `顯示 ${validCount} 個有效交易日，資料中沒有無成交日期`;
+        }
+
+        function aggregateTradingData(rawData, timeframe) {
+            return StockChartUtils.aggregateTradingData(rawData, timeframe);
+        }
+
+        function buildAverageSeries(rawData, period, selector) {
+            return StockChartUtils.buildAverageSeries(rawData, period, selector);
+        }
+
+        function buildMovingAverageSeries(rawData, period) {
+            return StockChartUtils.buildMovingAverageSeries(rawData, period);
+        }
+
+        function buildSeriesLookup(series) {
+            return StockChartUtils.buildSeriesLookup(series);
+        }
+
+        function buildPriceLookup(series) {
+            return StockChartUtils.buildPriceLookup(series);
+        }
+
+        function resolvePointX(point) {
+            if (!point || typeof point !== 'object') {
+                return null;
+            }
+            return point.x != null ? Number(point.x) : null;
+        }
+
+        function getActiveXFromChart(chart, activeElements) {
+            if (!chart || !activeElements || activeElements.length === 0) {
+                return null;
+            }
+
+            const active = activeElements[0];
+            const dataset = chart.data.datasets?.[active.datasetIndex];
+            const point = dataset?.data?.[active.index];
+            return resolvePointX(point);
+        }
+
+        function getChartElementPosition(chart, activeElement) {
+            const meta = chart.getDatasetMeta(activeElement.datasetIndex);
+            const element = meta?.data?.[activeElement.index];
+            return element ? { x: element.x, y: element.y } : { x: 0, y: 0 };
+        }
+
+        function setChartHoverByX(chart, xValue) {
+            if (!chart) {
+                return;
+            }
+
+            if (xValue == null) {
+                chart.setActiveElements([]);
+                chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+                chart.update('none');
+                return;
+            }
+
+            const activeElements = [];
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                const dataIndex = Array.isArray(dataset.data)
+                    ? dataset.data.findIndex(point => resolvePointX(point) === Number(xValue))
+                    : -1;
+
+                if (dataIndex >= 0) {
+                    activeElements.push({ datasetIndex: datasetIndex, index: dataIndex });
+                }
+            });
+
+            if (activeElements.length === 0) {
+                chart.setActiveElements([]);
+                chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+                chart.update('none');
+                return;
+            }
+
+            const position = getChartElementPosition(chart, activeElements[0]);
+            chart.setActiveElements(activeElements);
+            chart.tooltip?.setActiveElements?.(activeElements, position);
+            chart.update('none');
+        }
+
+        function syncHoverBetweenCharts(sourceChart, xValue) {
+            if (isHoverSyncing) {
+                return;
+            }
+
+            isHoverSyncing = true;
+            try {
+                if (sourceChart !== myChart) {
+                    setChartHoverByX(myChart, xValue);
+                }
+                if (sourceChart !== volumeChartInstance) {
+                    setChartHoverByX(volumeChartInstance, xValue);
+                }
+            } finally {
+                isHoverSyncing = false;
+            }
+        }
+
+        function clearSyncedHover() {
+            if (isHoverSyncing) {
+                return;
+            }
+
+            isHoverSyncing = true;
+            try {
+                setChartHoverByX(myChart, null);
+                setChartHoverByX(volumeChartInstance, null);
+            } finally {
+                isHoverSyncing = false;
+            }
+        }
+
+        function getTimeUnitForFrame(timeframe) {
+            if (timeframe === 'month') {
+                return 'month';
+            }
+            return timeframe === 'week' ? 'week' : 'day';
+        }
+
+        function formatPeriodTitle(item, timeframe) {
+            if (!item) {
+                return '—';
+            }
+
+            if (timeframe === 'week') {
+                return `週線｜${item.startDt.toFormat('yyyy/MM/dd')} - ${item.endDt.toFormat('yyyy/MM/dd')}`;
+            }
+            if (timeframe === 'month') {
+                return `月線｜${item.endDt.toFormat('yyyy/MM')}`;
+            }
+            return `日線｜${item.endDt.toFormat('yyyy/MM/dd')}`;
+        }
+
+        function buildStandardHoverOptions() {
+            return {
+                mode: 'index',
+                intersect: false
+            };
+        }
+
+        function scheduleAutoChartUpdate() {
+            clearTimeout(chartUpdateTimer);
+            const id = document.getElementById('stockId').value.trim();
+            if (!/^\d{4,6}$/.test(id)) {
+                return;
+            }
+            chartUpdateTimer = setTimeout(() => {
+                let currentMode = activeChartMode;
+                try {
+                    if (currentMode === 'line') updateChart();
+                    else if (currentMode === 'priceVolume') updateChartWithVolume();
+                    // else... just calling updateChart() as default
+                    else updateChart();
+                } catch(e) {}
+                loadRadarChart(id);
+            }, 500);
+        }
+
+        function scheduleNameLookup() {
+            clearTimeout(nameTimer);
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                document.getElementById('stockName').innerText = '';
+                return;
+            }
+
+            nameTimer = setTimeout(() => updateStockName(id), 350);
+        }
+
+        async function updateStockName(id) {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/name`);
+                if (!response.ok) {
+                    throw new Error('查詢失敗');
+                }
+                const data = await response.json();
+                const fallbackName = STOCK_NAME_MAP[id] || '';
+                const displayName = data.name || fallbackName;
+                document.getElementById('stockName').innerText = displayName ? `股票名稱：${displayName}` : '股票名稱：查無資料';
+            } catch (error) {
+                const fallbackName = STOCK_NAME_MAP[id] || '';
+                document.getElementById('stockName').innerText = fallbackName ? `股票名稱：${fallbackName}` : '股票名稱：查詢失敗';
+            }
+        }
+
+        function getMACDAnalysis(dif, dea, hist, prevHist, priceTrend, macdTrend, volumeTrend) {
+            if (dif > dea && hist > 0 && hist > prevHist) {
+                return {
+                    status: '多頭加速',
+                    advice: 'MACD 金叉且柱狀體增長，多頭動能強勁。',
+                    color: '#ff4d4d'
+                };
+            }
+            if (dif < dea && hist < 0 && hist < prevHist) {
+                return {
+                    status: '空頭加速',
+                    advice: 'MACD 死叉且柱狀體放大，空頭動能偏強。',
+                    color: '#28a745'
+                };
+            }
+            if (priceTrend === 'up' && macdTrend === 'down') {
+                return {
+                    status: '頂背離',
+                    advice: '價格走高但 MACD 走弱，留意高檔反轉風險。',
+                    color: '#f97316'
+                };
+            }
+            if (priceTrend === 'down' && macdTrend === 'up') {
+                return {
+                    status: '底背離',
+                    advice: '價格走低但 MACD 走強，可能出現止跌反彈。',
+                    color: '#22c55e'
+                };
+            }
+            if (hist > 0 && hist < prevHist) {
+                return {
+                    status: '動能減弱',
+                    advice: '多頭仍在，但柱狀體縮減，注意回檔。',
+                    color: '#ffa500'
+                };
+            }
+            if (hist < 0 && hist > prevHist) {
+                return {
+                    status: '空方減弱',
+                    advice: '空頭動能收斂，觀察是否止跌。',
+                    color: '#38bdf8'
+                };
+            }
+            if (volumeTrend === 'shrink') {
+                return {
+                    status: '縮量盤整',
+                    advice: '量能萎縮，短線偏盤整，等待方向突破。',
+                    color: '#6c757d'
+                };
+            }
+            return { status: '盤整', advice: '動能不明顯，等待方向突破。', color: '#6c757d' };
+        }
+
+        function getSimpleTrend(latest, previous) {
+            if (!Number.isFinite(latest) || !Number.isFinite(previous)) {
+                return 'flat';
+            }
+            if (latest > previous) {
+                return 'up';
+            }
+            if (latest < previous) {
+                return 'down';
+            }
+            return 'flat';
+        }
+
+        function getAverage(values) {
+            if (!values.length) {
+                return 0;
+            }
+            const sum = values.reduce((acc, v) => acc + v, 0);
+            return sum / values.length;
+        }
+
+        function getVolumeTrend(history, windowSize = 5) {
+            if (!Array.isArray(history) || history.length < windowSize * 2) {
+                return 'flat';
+            }
+            const recent = history.slice(-windowSize).map(d => Number(d.volume ?? 0));
+            const prior = history.slice(-windowSize * 2, -windowSize).map(d => Number(d.volume ?? 0));
+            const recentAvg = getAverage(recent);
+            const priorAvg = getAverage(prior);
+            if (recentAvg === 0 && priorAvg === 0) {
+                return 'flat';
+            }
+            return recentAvg < priorAvg * 0.85 ? 'shrink' : (recentAvg > priorAvg * 1.15 ? 'expand' : 'flat');
+        }
+
+        async function updateChart() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('line');
+
+            try {
+                // 1. 向後端抓取資料
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得股票數據');
+                }
+                const data = await response.json();
+                const normalizedData = normalizeTradingData(data);
+
+                if (normalizedData.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                updateTradingDayNote(data, normalizedData);
+                const labels = normalizedData.map(item => item.date);
+                const prices = normalizedData.map(item => item.price);
+                renderChart(labels, [{
+                    label: `${id} 收盤價`,
+                    data: prices,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]);
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取數據失敗: ' + error.message);
+            }
+        }
+
+        async function updateChartWithVolume() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('priceVolume');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得價量數據');
+                }
+                const data = await response.json();
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                const normalizedData = normalizeTradingData(data);
+                if (normalizedData.length === 0) {
+                    alert('該股票無可顯示的價量資料');
+                    return;
+                }
+
+                updateTradingDayNote(data, normalizedData);
+                switchToDualPanel();
+                destroyMainChart();
+                destroyVolumeChart();
+                const rendered = PriceChartRenderer.renderPriceVolumeCharts({
+                    Chart,
+                    priceCanvas: document.getElementById('myChart'),
+                    volumeCanvas: document.getElementById('volumeChart'),
+                    rawData: normalizedData,
+                    buildStandardHoverOptions,
+                    buildZoomPluginOptions,
+                    getActiveXFromChart,
+                    syncHoverBetweenCharts,
+                    clearSyncedHover
+                });
+                myChart = rendered.priceChart;
+                volumeChartInstance = rendered.volumeChart;
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取價量數據失敗: ' + error.message);
+            }
+        }
+
+        function getAdvancedDiagnosis(price, bands, prevBands) {
+            const { upper, mid, lower } = bands;
+            const slope = mid - prevBands.mid; // 判斷中軌斜率
+
+            // 1. 強勢區
+            if (price >= upper) {
+                return slope > 0
+                    ? { text: '【強勢噴發】趨勢向上且突破壓力，注意正乖離過大。', color: '#FF0000' }
+                    : { text: '【末端衝刺】趨勢走平但股價強拉，小心假突破。',   color: '#FF6600' };
+            }
+            // 2. 多頭支撐區
+            if (price > mid && price < upper) {
+                return slope > 0
+                    ? { text: '【多頭軌道】穩健上漲，中軌具備強大支撐。',   color: '#FF8C00' }
+                    : { text: '【震盪偏多】缺乏方向感，建議觀望。',         color: '#DAA520' };
+            }
+            // 3. 空頭壓力區
+            if (price <= mid && price > lower) {
+                return slope < 0
+                    ? { text: '【弱勢反彈】趨勢向下，中軌現在是沉重壓力。', color: '#0000FF' }
+                    : { text: '【震盪偏空】尋求支撐中。',                   color: '#4169E1' };
+            }
+            // 4. 超跌區
+            return slope < 0
+                ? { text: '【恐慌拋售】加速下跌，靜待止跌訊號。',         color: '#8B0000' }
+                : { text: '【箱型底部】已達支撐區，觀察是否站回中軌。',   color: '#008000' };
+        }
+
+        async function drawBollinger() {
+            const id = document.getElementById('stockId').value;
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('bollinger');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${id}/bollinger?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得布林通道數據');
+                }
+
+                const result = await response.json();
+                const history = Array.isArray(result.history) ? result.history : [];
+                const bands = result.bands;
+
+                if (history.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                if (!bands || bands.upper == null || bands.mid == null || bands.lower == null) {
+                    alert('資料不足，無法計算布林通道（至少需要 20 筆）');
+                    return;
+                }
+
+                switchToSinglePanel();
+                const labels = history.map(item => item.date);
+                const prices = history.map(item => item.price);
+
+                const upperLine = Array(labels.length).fill(bands.upper);
+                const lowerLine = Array(labels.length).fill(bands.lower);
+                const midLine = Array(labels.length).fill(bands.mid);
+
+                const ctx = document.getElementById('myChart').getContext('2d');
+                destroyMainChart();
+
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: '收盤價', data: prices, borderColor: 'black', borderWidth: 2, fill: false },
+                            { label: '上軌 (壓力)', data: upperLine, borderColor: 'red', borderDash: [5, 5], fill: false },
+                            { label: '中軌 (MA20)', data: midLine, borderColor: 'gray', borderDash: [5, 5], fill: false },
+                            { label: '下軌 (支撐)', data: lowerLine, borderColor: 'green', borderDash: [5, 5], fill: false }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: buildStandardHoverOptions(),
+                        plugins: {
+                            legend: { position: 'top' }
+                        }
+                    }
+                });
+
+                // ── 進階布林通道位置診斷 ───────────────────────────────────
+                const currentPrice = result.history[result.history.length - 1].price;
+                const { upper, mid, lower } = result.bands;
+
+                // 計算前一根 MA20（用倒數第 2 筆到倒數第 21 筆收盤價平均）
+                let prevMid = mid; // 預設與現在相同（斜率=0）
+                if (prices.length >= 21) {
+                    const slice = prices.slice(prices.length - 21, prices.length - 1);
+                    prevMid = slice.reduce((s, v) => s + v, 0) / slice.length;
+                }
+
+                const diagnosis = getAdvancedDiagnosis(
+                    currentPrice,
+                    { upper, mid, lower },
+                    { mid: prevMid }
+                );
+                const bolColor = diagnosis.color;
+                const slope    = mid - prevMid;
+
+                const infoDiv = document.getElementById('status-box');
+                infoDiv.style.borderColor = bolColor;
+                infoDiv.innerHTML = `
+                    <h3 style="color:${bolColor}">📊 當前診斷：${diagnosis.text}</h3>
+                    <p>目前價格：<strong>${currentPrice}</strong>　／　上軌：${upper.toFixed(2)}　中軌：${mid.toFixed(2)}　下軌：${lower.toFixed(2)}</p>
+                    <p style="font-size:0.88em; color:#555;">中軌斜率（MA20 變化量）：<strong>${slope >= 0 ? '+' : ''}${slope.toFixed(2)}</strong>　→　${slope > 0 ? '📈 上揚' : slope < 0 ? '📉 下彎' : '➡️ 走平'}</p>
+                `;
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取布林通道失敗: ' + error.message);
+            }
+        }
+
+        async function drawCandlestick() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            if (!ensureFinancialPluginReady()) {
+                alert('K線外掛尚未載入完成，請重新整理頁面後再試一次。');
+                return;
+            }
+
+            setActiveChartMode('candlestick');
+
+            try {
+                const timeframe = getSelectedTimeframe();
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
+                if (!response.ok) {
+                    throw new Error('無法取得 K 線資料');
+                }
+                const rawData = await response.json();
+
+                if (!Array.isArray(rawData) || rawData.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                const aggregatedData = aggregateTradingData(rawData, timeframe);
+                if (aggregatedData.length === 0) {
+                    alert('該股票無可顯示的K線資料');
+                    return;
+                }
+
+                updateTradingDayNote(rawData, normalizeTradingData(rawData));
+                const candlestickData = aggregatedData.map(d => ({
+                    x: d.x,
+                    o: d.o,
+                    h: d.h,
+                    l: d.l,
+                    c: d.c
+                }));
+                const volumeData = aggregatedData.map(d => ({
+                    x: d.x,
+                    y: Number((d.volume / 1000).toFixed(2))
+                }));
+                const ma5Data = buildMovingAverageSeries(aggregatedData, 5);
+                const ma20Data = buildMovingAverageSeries(aggregatedData, 20);
+                const ma60Data = buildMovingAverageSeries(aggregatedData, 60);
+                const ma120Data = buildMovingAverageSeries(aggregatedData, 120);
+                const priceLookup = buildPriceLookup(aggregatedData);
+                const prevCloseLookup = new Map();
+                for (let i = 1; i < aggregatedData.length; i++) {
+                    prevCloseLookup.set(Number(aggregatedData[i].x), Number(aggregatedData[i - 1].c));
+                }
+                const minX = candlestickData[0].x;
+                const maxX = candlestickData[candlestickData.length - 1].x;
+                const timeUnit = getTimeUnitForFrame(timeframe);
+                const volumeColors = aggregatedData.map(d => (d.c >= d.o ? 'rgba(220, 53, 69, 0.45)' : 'rgba(25, 135, 84, 0.45)'));
+                const volumeBorders = aggregatedData.map(d => (d.c >= d.o ? 'rgba(220, 53, 69, 0.8)' : 'rgba(25, 135, 84, 0.8)'));
+
+                const mainTooltipCallbacks = {
+                    title(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        return formatPeriodTitle(priceLookup.get(xValue), timeframe);
+                    },
+                    beforeBody(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        const item = priceLookup.get(xValue);
+                        if (!item) {
+                            return [];
+                        }
+
+                        const prevClose = prevCloseLookup.get(xValue);
+                        const compareBase = Number.isFinite(prevClose) ? prevClose : item.o;
+                        const change = item.c - compareBase;
+                        const changePct = compareBase ? (change / compareBase) * 100 : null;
+                        const amplitudePct = item.o ? ((item.h - item.l) / item.o) * 100 : null;
+                        const amplitudeText = amplitudePct == null ? '—' : `${formatNumber(amplitudePct)}%`;
+                        const prevCloseText = Number.isFinite(prevClose) ? formatNumber(prevClose) : '—';
+
+                        return [
+                            `開盤 ${formatNumber(item.o)}｜最高 ${formatNumber(item.h)}｜最低 ${formatNumber(item.l)}｜收盤 ${formatNumber(item.c)}`,
+                            `昨收 ${prevCloseText}｜與昨收比 ${formatSignedNumber(change)} (${formatSignedPercent(changePct)})｜振幅 ${amplitudeText}`,
+                            `成交量 ${formatVolume(item.volume / 1000)} 千股`
+                        ];
+                    },
+                    label(context) {
+                        if (context.dataset.type === 'candlestick') {
+                            return null;
+                        }
+                        return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                    }
+                };
+
+                const volumeTooltipCallbacks = {
+                    title(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        return formatPeriodTitle(priceLookup.get(xValue), timeframe);
+                    },
+                    beforeBody(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        const item = priceLookup.get(xValue);
+                        if (!item) {
+                            return [];
+                        }
+
+                        const prevClose = prevCloseLookup.get(xValue);
+                        const compareBase = Number.isFinite(prevClose) ? prevClose : item.o;
+                        const change = item.c - compareBase;
+                        const changePct = compareBase ? (change / compareBase) * 100 : null;
+                        const prevCloseText = Number.isFinite(prevClose) ? formatNumber(prevClose) : '—';
+
+                        return [
+                            `成交量 ${formatVolume(item.volume / 1000)} 千股`,
+                            `昨收 ${prevCloseText}｜收盤 ${formatNumber(item.c)}｜與昨收比 ${formatSignedNumber(change)} (${formatSignedPercent(changePct)})`
+                        ];
+                    },
+                    label(context) {
+                        if (context.dataset.type === 'bar') {
+                            return null;
+                        }
+                        return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                    }
+                };
+
+                function handleLinkedHover(event, activeElements, chart) {
+                    const xValue = getActiveXFromChart(chart, activeElements);
+                    if (xValue != null) {
+                        syncHoverBetweenCharts(chart, xValue);
+                    } else if (event?.native?.type === 'mouseout') {
+                        clearSyncedHover();
+                    }
+                }
+
+                switchToDualPanel();
+                document.getElementById('institutionalChartPanel').style.display = 'block';
+                const priceCtx = document.getElementById('myChart').getContext('2d');
+                const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+                destroyMainChart();
+                destroyVolumeChart();
+                destroyInstitutionalChart();
+
+                myChart = new Chart(priceCtx, {
+                    type: 'candlestick',
+                    data: {
+                        datasets: [
+                            {
+                                type: 'candlestick',
+                                label: `${id} ${timeframe === 'day' ? '日線' : timeframe === 'week' ? '週線' : '月線'}`,
+                                data: candlestickData,
+                                parsing: false,
+                                yAxisID: 'y',
+                                order: 1,
+                                color: {
+                                    up: 'red',
+                                    down: 'green',
+                                    unchanged: 'gray'
+                                }
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA5',
+                                data: ma5Data,
+                                yAxisID: 'y',
+                                borderColor: '#f59e0b',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA20',
+                                data: ma20Data,
+                                yAxisID: 'y',
+                                borderColor: '#7c3aed',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA60',
+                                data: ma60Data,
+                                yAxisID: 'y',
+                                borderColor: '#2563eb',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA120',
+                                data: ma120Data,
+                                yAxisID: 'y',
+                                borderColor: '#dc2626',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        interaction: buildStandardHoverOptions(),
+                        onHover: handleLinkedHover,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: mainTooltipCallbacks },
+                            zoom: buildZoomPluginOptions(() => myChart)
+                        },
+                        scales: {
+                            x: {
+                                type: 'timeseries',
+                                min: minX,
+                                max: maxX,
+                                time: { unit: timeUnit },
+                                ticks: { display: false },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: '股價' }
+                            }
+                        }
+                    }
+                });
+
+                volumeChartInstance = new Chart(volumeCtx, {
+                    data: {
+                        datasets: [
+                            {
+                                type: 'bar',
+                                label: '成交量(千股)',
+                                data: volumeData,
+                                backgroundColor: volumeColors,
+                                borderColor: volumeBorders,
+                                borderWidth: 1,
+                                barPercentage: 0.9,
+                                categoryPercentage: 0.98,
+                                order: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        interaction: buildStandardHoverOptions(),
+                        onHover: handleLinkedHover,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: volumeTooltipCallbacks },
+                            zoom: buildZoomPluginOptions(() => volumeChartInstance)
+                        },
+                        scales: {
+                            x: {
+                                type: 'timeseries',
+                                min: minX,
+                                max: maxX,
+                                time: { unit: timeUnit }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: '成交量(千股)' }
+                            }
+                        }
+                    }
+                });
+
+                priceCtx.canvas.onmouseleave = clearSyncedHover;
+                volumeCtx.canvas.onmouseleave = clearSyncedHover;
+                applyCandlestickOverlayVisibility();
+                await attachBigHolderOverlayToMainChart(id);
+                await updateBigHolderDiagnosisBox(id);
+                await drawInstitutionalChart(id);
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取K線數據失敗: ' + error.message);
+            }
+        }
+
+        async function loadMACDChart(symbol) {
+            const id = (symbol ?? document.getElementById('stockId').value).trim();
+            const panel = document.getElementById('macdChartPanel');
+            const ctx = document.getElementById('macdChart').getContext('2d');
+            const note = document.getElementById('macd-chart-note');
+            if (!id) {
+                destroyMacdChart();
+                panel.style.display = 'none';
+                note.innerText = '請輸入股票代碼';
+                note.style.color = '#666';
+                return;
+            }
+
+            try {
+                const [macdResp, historyResp] = await Promise.all([
+                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/macd?limit=60`),
+                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
+                ]);
+
+                if (!macdResp.ok) throw new Error('無法取得 MACD 資料');
+                const data = await macdResp.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    destroyMacdChart();
+                    panel.style.display = 'none';
+                    note.innerText = '此股票暫無 MACD 資料';
+                    note.style.color = '#666';
+                    return;
+                }
+
+                let history = [];
+                if (historyResp.ok) {
+                    const rawHistory = await historyResp.json();
+                    if (Array.isArray(rawHistory)) {
+                        history = rawHistory;
+                    }
+                }
+
+                const labels = data.map((_, i) => i + 1);
+                const difData = data.map(d => d.dif);
+                const deaData = data.map(d => d.dea);
+                const histData = data.map(d => d.histogram);
+
+                destroyMacdChart();
+                panel.style.display = 'block';
+
+                macdChartInstance = new Chart(ctx, {
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'DIF',
+                                data: difData,
+                                type: 'line',
+                                borderColor: '#007bff',
+                                borderWidth: 1,
+                                fill: false
+                            },
+                            {
+                                label: 'DEA',
+                                data: deaData,
+                                type: 'line',
+                                borderColor: '#ffa500',
+                                borderWidth: 1,
+                                fill: false
+                            },
+                            {
+                                label: '柱狀體',
+                                data: histData,
+                                type: 'bar',
+                                backgroundColor: histData.map(v => v > 0 ? '#ff4d4d' : '#28a745')
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: { beginAtZero: true, title: { display: true, text: 'MACD' } }
+                        }
+                    }
+                });
+
+                const last = data[data.length - 1];
+                const prev = data.length > 1 ? data[data.length - 2] : null;
+                const lastPrice = history.length ? Number(history[history.length - 1].price ?? history[history.length - 1].c) : NaN;
+                const prevPrice = history.length > 1 ? Number(history[history.length - 2].price ?? history[history.length - 2].c) : NaN;
+                const priceTrend = getSimpleTrend(lastPrice, prevPrice);
+                const macdTrend = getSimpleTrend(last.dif, prev ? prev.dif : NaN);
+                const volumeTrend = getVolumeTrend(history);
+                const analysis = getMACDAnalysis(last.dif, last.dea, last.histogram, prev ? prev.histogram : 0, priceTrend, macdTrend, volumeTrend);
+
+                note.innerText = `${analysis.status}｜${analysis.advice}`;
+                note.style.color = analysis.color;
+            } catch (error) {
+                destroyMacdChart();
+                panel.style.display = 'none';
+                note.innerText = `MACD 載入失敗：${error.message}`;
+                note.style.color = '#dc2626';
+                console.warn('MACD 載入失敗:', error);
+            }
+        }
+
+        async function fetchBigHolderHistory(symbol, weeks = 24) {
+            const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(symbol)}/big-holders?weeks=${weeks}`);
+            if (!response.ok) {
+                throw new Error(`無法取得大戶持股資料 (HTTP ${response.status})`);
+            }
+            const rows = await response.json();
+            if (!Array.isArray(rows)) {
+                return [];
+            }
+            return rows
+                .filter(row => Number(row.holdingFactor) === 15 && row.date)
+                .map(row => ({
+                    date: row.date,
+                    x: luxon.DateTime.fromISO(row.date).valueOf(),
+                    percentage: Number(row.percentage ?? 0)
+                }))
+                .filter(row => Number.isFinite(row.x))
+                .sort((a, b) => a.x - b.x);
+        }
+
+        async function attachBigHolderOverlayToMainChart(symbol) {
+            if (!myChart || !myChart.options?.scales?.x) {
+                return;
+            }
+
+            const bigHolderRows = await fetchBigHolderHistory(symbol, 24);
+            if (!bigHolderRows.length) {
+                return;
+            }
+
+            myChart.data.datasets = myChart.data.datasets.filter(dataset => dataset.label !== '千張大戶持股比 (%)');
+
+            if (!myChart.options.scales['y-percentage']) {
+                myChart.options.scales['y-percentage'] = {
+                    type: 'linear',
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: '千張大戶持股比 (%)' },
+                    ticks: {
+                        callback: function(value) {
+                            return `${Number(value).toFixed(1)}%`;
+                        }
+                    }
+                };
+            }
+
+            const bigHolderDataset = {
+                label: '千張大戶持股比 (%)',
+                data: bigHolderRows.map(row => ({ x: row.x, y: Number(row.percentage.toFixed(2)) })),
+                type: 'line',
+                yAxisID: 'y-percentage',
+                borderColor: '#6f42c1',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                tension: 0.15,
+                spanGaps: true,
+                order: 0
+            };
+
+            myChart.data.datasets.push(bigHolderDataset);
+            myChart.update('none');
+        }
+
+        async function updateBigHolderDiagnosisBox(symbol) {
+            const statusBox = document.getElementById('status-box');
+            if (!statusBox) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(symbol)}/big-holder-diagnosis?weeks=16`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const diagnosis = await response.json();
+                const score = Number(diagnosis.score ?? 0);
+                const latest = Number(diagnosis.latestPercentage ?? 0);
+                const previous = Number(diagnosis.previousPercentage ?? 0);
+                const signal = diagnosis.signal || 'neutral';
+
+                const borderColor = signal === 'burst-warning'
+                    ? '#dc2626'
+                    : signal === 'concentrating'
+                        ? '#6f42c1'
+                        : '#64748b';
+
+                statusBox.style.borderColor = borderColor;
+                statusBox.innerHTML = `
+                    <h3 style="color:${borderColor};">🧠 大戶籌碼 AI 診斷</h3>
+                    <p>${diagnosis.conclusion || '暫無診斷資料'}</p>
+                    <p>大戶分數：<strong>${score}</strong>／20　|　最新持股比：<strong>${latest.toFixed(2)}%</strong>（前一週 ${previous.toFixed(2)}%）</p>
+                `;
+            } catch (error) {
+                statusBox.style.borderColor = '#94a3b8';
+                statusBox.innerHTML = `<h3 style="color:#64748b;">🧠 大戶籌碼 AI 診斷</h3><p>載入失敗：${error.message}</p>`;
+            }
+        }
+
+        async function drawInstitutionalChart(symbol) {
+            const id = (symbol ?? document.getElementById('stockId').value).trim();
+            const panel = document.getElementById('institutionalChartPanel');
+            const ctx = document.getElementById('institutionalChart').getContext('2d');
+
+            if (!id) {
+                destroyInstitutionalChart();
+                panel.style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/institutional?limit=60`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    destroyInstitutionalChart();
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                const rows = data.map(item => {
+                    const foreignBuy = Number(item.foreignBuy ?? 0);
+                    const trustBuy = Number(item.trustBuy ?? 0);
+                    const dealerBuy = Number(item.dealerBuy ?? 0);
+                    const dailyVolume = Number(item.dailyVolume ?? 0);
+                    return {
+                        date: item.date,
+                        foreignBuy,
+                        trustBuy,
+                        dealerBuy,
+                        dailyVolume,
+                        totalNetBuy: foreignBuy + trustBuy + dealerBuy
+                    };
+                });
+
+                const labels = rows.map(row => row.date);
+                const foreignData = rows.map(row => row.foreignBuy);
+                const trustData = rows.map(row => row.trustBuy);
+                const dealerData = rows.map(row => row.dealerBuy);
+                const bigHolderRows = await fetchBigHolderHistory(id, 24);
+                const bigHolderByDate = new Map(bigHolderRows.map(row => [row.date, row.percentage]));
+                const bigHolderData = labels.map(label => {
+                    const value = bigHolderByDate.get(label);
+                    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+                });
+                const cumulative20Data = rows.map((row, index) => {
+                    const startIndex = Math.max(0, index - 19);
+                    return Number(rows.slice(startIndex, index + 1).reduce((sum, current) => sum + current.totalNetBuy, 0).toFixed(0));
+                });
+
+                destroyInstitutionalChart();
+                panel.style.display = 'block';
+
+                institutionalChartInstance = new Chart(ctx, {
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: '外資買賣超',
+                                type: 'bar',
+                                data: foreignData,
+                                backgroundColor: foreignData.map(v => pickInstitutionalColor(v, 'rgba(220, 38, 38, 0.78)', 'rgba(34, 197, 94, 0.78)')),
+                                borderColor: foreignData.map(v => pickInstitutionalColor(v, 'rgba(185, 28, 28, 1)', 'rgba(22, 163, 74, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '投信買賣超',
+                                type: 'bar',
+                                data: trustData,
+                                backgroundColor: trustData.map(v => pickInstitutionalColor(v, 'rgba(249, 115, 22, 0.80)', 'rgba(59, 130, 246, 0.80)')),
+                                borderColor: trustData.map(v => pickInstitutionalColor(v, 'rgba(234, 88, 12, 1)', 'rgba(37, 99, 235, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '自營商買賣超',
+                                type: 'bar',
+                                data: dealerData,
+                                backgroundColor: dealerData.map(v => pickInstitutionalColor(v, 'rgba(107, 114, 128, 0.82)', 'rgba(234, 179, 8, 0.82)')),
+                                borderColor: dealerData.map(v => pickInstitutionalColor(v, 'rgba(75, 85, 99, 1)', 'rgba(202, 138, 4, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '近 20 日法人合計累積買賣超',
+                                type: 'line',
+                                yAxisID: 'y2',
+                                data: cumulative20Data,
+                                borderColor: 'rgba(124, 58, 237, 1)',
+                                backgroundColor: 'rgba(124, 58, 237, 0.15)',
+                                tension: 0.25,
+                                pointRadius: 2,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                fill: false
+                            },
+                            {
+                                label: '千張大戶持股比 (%)',
+                                type: 'line',
+                                yAxisID: 'y-percentage',
+                                data: bigHolderData,
+                                borderColor: '#6f42c1',
+                                backgroundColor: 'transparent',
+                                tension: 0.15,
+                                pointRadius: 2,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                spanGaps: true,
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: buildStandardHoverOptions(),
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { font: { size: 11 } }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    title: function(items) {
+                                        const row = rows[items[0].dataIndex];
+                                        return `${row?.date || ''} 法人買賣詳情`;
+                                    },
+                                    label: function(context) {
+                                        const value = Number(context.parsed.y ?? 0);
+                                        if (context.dataset.type === 'line') {
+                                            if (context.dataset.label === '千張大戶持股比 (%)') {
+                                                return `${context.dataset.label}：${Number(value).toFixed(2)}%`;
+                                            }
+                                            return `${context.dataset.label}：${formatInstitutionalShares(value)}`;
+                                        }
+                                        const labelMap = {
+                                            '外資買賣超': '外資',
+                                            '投信買賣超': '投信',
+                                            '自營商買賣超': '自營商'
+                                        };
+                                        const label = labelMap[context.dataset.label] || context.dataset.label;
+                                        return `${label}：${formatInstitutionalShares(value)}`;
+                                    },
+                                    afterBody: function(items) {
+                                        const row = rows[items[0].dataIndex];
+                                        if (!row) {
+                                            return [];
+                                        }
+                                        const participation = row.dailyVolume > 0 ? (Math.abs(row.totalNetBuy) / row.dailyVolume) * 100 : 0;
+                                        return [
+                                            `三大法人合計：${formatInstitutionalShares(row.totalNetBuy)}`,
+                                            `法人成交佔比：${formatInstitutionalPercent(participation, 1)}`,
+                                            `成交量：${new Intl.NumberFormat('zh-TW').format(Math.round(row.dailyVolume))} 張`
+                                        ];
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                stacked: false,
+                                ticks: {
+                                    autoSkip: true,
+                                    maxRotation: 45,
+                                    minRotation: 0,
+                                    font: { size: 9 }
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '買賣超(股)' },
+                                ticks: {
+                                    callback: function(value) {
+                                        if (Math.abs(value) >= 10000000) {
+                                            return (value / 10000000).toFixed(1) + '千萬';
+                                        } else if (Math.abs(value) >= 10000) {
+                                            return (value / 10000).toFixed(0) + '萬';
+                                        }
+                                        return value.toLocaleString();
+                                    }
+                                }
+                            },
+                            y2: {
+                                position: 'right',
+                                beginAtZero: false,
+                                grid: {
+                                    drawOnChartArea: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: '近 20 日累積買賣超(股)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return new Intl.NumberFormat('zh-TW').format(Math.round(value));
+                                    }
+                                }
+                            },
+                            'y-percentage': {
+                                position: 'right',
+                                beginAtZero: false,
+                                grid: {
+                                    drawOnChartArea: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: '大戶持股比(%)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return `${Number(value).toFixed(1)}%`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                destroyInstitutionalChart();
+                panel.style.display = 'none';
+                console.warn('法人買賣圖表載入失敗:', error);
+            }
+        }
+
+        function formatSignedPercent(value, digits = 2) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return '—';
+            }
+            return `${numeric > 0 ? '+' : ''}${numeric.toFixed(digits)}%`;
+        }
+
+        function formatInstitutionalShares(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return '—';
+            }
+            const formatted = new Intl.NumberFormat('zh-TW').format(Math.abs(Math.round(numeric)));
+            return `${numeric >= 0 ? '+' : '-'}${formatted} 張`;
+        }
+
+        function formatInstitutionalPercent(value, digits = 1) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return '—';
+            }
+            return `${numeric.toFixed(digits)}%`;
+        }
+
+        function pickInstitutionalColor(value, positiveColor, negativeColor) {
+            return value >= 0 ? positiveColor : negativeColor;
+        }
+
+        function resetStatusBox() {
+            const box = document.getElementById('status-box');
+            box.style.borderColor = '#ccc';
+            box.innerHTML = '<h3>請切換至「布林通道」以查看位置診斷</h3>';
+        }
+
+        function setActiveChartMode(mode) {
+            activeChartMode = mode;
+        }
+
+        function getSelectedTimeframe() {
+            return document.getElementById('timeframeSelect')?.value || 'day';
+        }
+
+        function isToggleEnabled(id) {
+            return Boolean(document.getElementById(id)?.checked);
+        }
+
+        function handleOverlayToggle() {
+            if (activeChartMode !== 'candlestick') {
+                return;
+            }
+            applyCandlestickOverlayVisibility();
+        }
+
+        function applyCandlestickOverlayVisibility() {
+            if (myChart) {
+                const ma5 = myChart.data.datasets.find(d => d.label === 'MA5');
+                const ma20 = myChart.data.datasets.find(d => d.label === 'MA20');
+                const ma60 = myChart.data.datasets.find(d => d.label === 'MA60');
+                const ma120 = myChart.data.datasets.find(d => d.label === 'MA120');
+                if (ma5) {
+                    ma5.hidden = !isToggleEnabled('toggleMA5');
+                }
+                if (ma20) {
+                    ma20.hidden = !isToggleEnabled('toggleMA20');
+                }
+                if (ma60) {
+                    ma60.hidden = !isToggleEnabled('toggleMA60');
+                }
+                if (ma120) {
+                    ma120.hidden = !isToggleEnabled('toggleMA120');
+                }
+                myChart.update('none');
+            }
+        }
+
+        function syncChartRange(sourceChart) {
+            if (!sourceChart || isRangeSyncing) {
+                return;
+            }
+
+            const min = sourceChart.scales?.x?.min;
+            const max = sourceChart.scales?.x?.max;
+            if (min == null || max == null) {
+                return;
+            }
+
+            isRangeSyncing = true;
+            try {
+                if (sourceChart !== myChart && myChart?.options?.scales?.x) {
+                    myChart.options.scales.x.min = min;
+                    myChart.options.scales.x.max = max;
+                    myChart.update('none');
+                }
+                if (sourceChart !== volumeChartInstance && volumeChartInstance?.options?.scales?.x) {
+                    volumeChartInstance.options.scales.x.min = min;
+                    volumeChartInstance.options.scales.x.max = max;
+                    volumeChartInstance.update('none');
+                }
+            } finally {
+                isRangeSyncing = false;
+            }
+        }
+
+        function buildZoomPluginOptions(sourceChartGetter) {
+            return {
+                limits: {
+                    x: { minRange: 3 * 24 * 60 * 60 * 1000 }
+                },
+                pan: {
+                    enabled: true,
+                    mode: 'x',
+                    threshold: 4,
+                    onPanComplete() {
+                        syncChartRange(sourceChartGetter());
+                    }
+                },
+                zoom: {
+                    wheel: { enabled: true, speed: 0.08 },
+                    drag: {
+                        enabled: true,
+                        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                        borderColor: 'rgba(37, 99, 235, 0.4)',
+                        borderWidth: 1
+                    },
+                    pinch: { enabled: true },
+                    mode: 'x',
+                    onZoomComplete() {
+                        syncChartRange(sourceChartGetter());
+                    }
+                }
+            };
+        }
+
+        function resetZoomPan() {
+            if (myChart?.resetZoom) {
+                myChart.resetZoom();
+            }
+            if (volumeChartInstance?.resetZoom) {
+                volumeChartInstance.resetZoom();
+            }
+
+            if (myChart?.options?.scales?.x) {
+                myChart.options.scales.x.min = undefined;
+                myChart.options.scales.x.max = undefined;
+                myChart.update('none');
+            }
+            if (volumeChartInstance?.options?.scales?.x) {
+                volumeChartInstance.options.scales.x.min = undefined;
+                volumeChartInstance.options.scales.x.max = undefined;
+                volumeChartInstance.update('none');
+            }
+        }
+
+        function handleTimeframeChange() {
+            if (activeChartMode === 'candlestick') {
+                drawCandlestick();
+            }
+        }
+
+        function formatNumber(value, digits = 2) {
+            return StockChartUtils.formatNumber(value, digits);
+        }
+
+        function formatSignedNumber(value, digits = 2) {
+            return StockChartUtils.formatSignedNumber(value, digits);
+        }
+
+        function formatVolume(value) {
+            return StockChartUtils.formatVolume(value);
+        }
+
+        function parseTradingDate(value) {
+            return StockChartUtils.parseTradingDate(value);
+        }
+
+        function isValidPrice(value) {
+            return StockChartUtils.isValidPrice(value);
+        }
+
+        function normalizeTradingData(rawData) {
+            return StockChartUtils.normalizeTradingData(rawData);
+        }
+
+        function aggregateTradingData(rawData, timeframe) {
+            return StockChartUtils.aggregateTradingData(rawData, timeframe);
+        }
+
+        function buildAverageSeries(rawData, period, selector) {
+            return StockChartUtils.buildAverageSeries(rawData, period, selector);
+        }
+
+        function buildMovingAverageSeries(rawData, period) {
+            return StockChartUtils.buildMovingAverageSeries(rawData, period);
+        }
+
+        function buildSeriesLookup(series) {
+            return StockChartUtils.buildSeriesLookup(series);
+        }
+
+        function buildPriceLookup(series) {
+            return StockChartUtils.buildPriceLookup(series);
+        }
+
+        function resolvePointX(point) {
+            if (!point || typeof point !== 'object') {
+                return null;
+            }
+            return point.x != null ? Number(point.x) : null;
+        }
+
+        function getActiveXFromChart(chart, activeElements) {
+            if (!chart || !activeElements || activeElements.length === 0) {
+                return null;
+            }
+
+            const active = activeElements[0];
+            const dataset = chart.data.datasets?.[active.datasetIndex];
+            const point = dataset?.data?.[active.index];
+            return resolvePointX(point);
+        }
+
+        function getChartElementPosition(chart, activeElement) {
+            const meta = chart.getDatasetMeta(activeElement.datasetIndex);
+            const element = meta?.data?.[activeElement.index];
+            return element ? { x: element.x, y: element.y } : { x: 0, y: 0 };
+        }
+
+        function setChartHoverByX(chart, xValue) {
+            if (!chart) {
+                return;
+            }
+
+            if (xValue == null) {
+                chart.setActiveElements([]);
+                chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+                chart.update('none');
+                return;
+            }
+
+            const activeElements = [];
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                const dataIndex = Array.isArray(dataset.data)
+                    ? dataset.data.findIndex(point => resolvePointX(point) === Number(xValue))
+                    : -1;
+
+                if (dataIndex >= 0) {
+                    activeElements.push({ datasetIndex: datasetIndex, index: dataIndex });
+                }
+            });
+
+            if (activeElements.length === 0) {
+                chart.setActiveElements([]);
+                chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+                chart.update('none');
+                return;
+            }
+
+            const position = getChartElementPosition(chart, activeElements[0]);
+            chart.setActiveElements(activeElements);
+            chart.tooltip?.setActiveElements?.(activeElements, position);
+            chart.update('none');
+        }
+
+        function syncHoverBetweenCharts(sourceChart, xValue) {
+            if (isHoverSyncing) {
+                return;
+            }
+
+            isHoverSyncing = true;
+            try {
+                if (sourceChart !== myChart) {
+                    setChartHoverByX(myChart, xValue);
+                }
+                if (sourceChart !== volumeChartInstance) {
+                    setChartHoverByX(volumeChartInstance, xValue);
+                }
+            } finally {
+                isHoverSyncing = false;
+            }
+        }
+
+        function clearSyncedHover() {
+            if (isHoverSyncing) {
+                return;
+            }
+
+            isHoverSyncing = true;
+            try {
+                setChartHoverByX(myChart, null);
+                setChartHoverByX(volumeChartInstance, null);
+            } finally {
+                isHoverSyncing = false;
+            }
+        }
+
+        function getTimeUnitForFrame(timeframe) {
+            if (timeframe === 'month') {
+                return 'month';
+            }
+            return timeframe === 'week' ? 'week' : 'day';
+        }
+
+        function formatPeriodTitle(item, timeframe) {
+            if (!item) {
+                return '—';
+            }
+
+            if (timeframe === 'week') {
+                return `週線｜${item.startDt.toFormat('yyyy/MM/dd')} - ${item.endDt.toFormat('yyyy/MM/dd')}`;
+            }
+            if (timeframe === 'month') {
+                return `月線｜${item.endDt.toFormat('yyyy/MM')}`;
+            }
+            return `日線｜${item.endDt.toFormat('yyyy/MM/dd')}`;
+        }
+
+        function buildStandardHoverOptions() {
+            return {
+                mode: 'index',
+                intersect: false
+            };
+        }
+
+        function scheduleAutoChartUpdate() {
+            clearTimeout(chartUpdateTimer);
+            const id = document.getElementById('stockId').value.trim();
+            if (!/^\d{4,6}$/.test(id)) {
+                return;
+            }
+            chartUpdateTimer = setTimeout(() => {
+                let currentMode = activeChartMode;
+                try {
+                    if (currentMode === 'line') updateChart();
+                    else if (currentMode === 'priceVolume') updateChartWithVolume();
+                    // else... just calling updateChart() as default
+                    else updateChart();
+                } catch(e) {}
+                loadRadarChart(id);
+            }, 500);
+        }
+
+        async function loadRadarChart(symbol) {
+            const id = (symbol ?? document.getElementById('stockId').value).trim();
+            const ctx = document.getElementById('radarChart').getContext('2d');
+            if (!id) {
+                if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
+                return;
+            }
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/radar`);
+                if (!response.ok) {
+                    if (response.status === 404) throw new Error(`找不到雷達端點（HTTP 404），請確認後端服務是否正常運行。`);
+                    if (response.status === 400) throw new Error(`股票代號「${id}」格式不正確。`);
+                    throw new Error(`雷達圖 API 錯誤（HTTP ${response.status}），股票代號：${id}`);
+                }
+                const data = await response.json();
+
+                const trend      = Number(data.trend      ?? 0);
+                const momentum   = Number(data.momentum   ?? 0);
+                const money      = Number(data.money      ?? 0);
+                const volatility = Number(data.volatility ?? 0);
+                const context    = Number(data.context    ?? 0);
+                const fundamental= Number(data.fundamental?? 0);
+                const totalScore = Number(data.totalScore ?? 0);
+                const label      = data.label || '';
+                const conclusion = data.conclusion || '';
+
+                // 更新評分橫幅
+                const scoreEl = document.getElementById('radar-total-score');
+                const barEl   = document.getElementById('radar-score-bar');
+                const badgeEl = document.getElementById('radar-label-badge');
+                const concEl  = document.getElementById('radar-conclusion');
+                if (scoreEl) {
+                    const safeT = Math.max(0, Math.min(100, totalScore));
+                    const color = safeT >= 80 ? '#dc2626' : safeT >= 65 ? '#ea580c' : safeT >= 50 ? '#2563eb' : safeT >= 35 ? '#64748b' : '#16a34a';
+                    scoreEl.innerText = safeT;
+                    scoreEl.style.color = color;
+                    if (barEl) { barEl.style.width = safeT + '%'; barEl.style.background = color; }
+                    if (badgeEl) badgeEl.innerText = label || '--';
+                    if (concEl)  concEl.innerText  = conclusion || '分析完成';
+                    concEl.title = conclusion || '';
+                }
+
+                if (radarChartInstance) radarChartInstance.destroy();
+                radarChartInstance = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: ['趨勢', '動能', '籌碼', '波動', '環境', '營收'],
+                        datasets: [{
+                            label: '個股六維評分',
+                            data: [trend, momentum, money, volatility, context, fundamental],
+                            fill: true,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgb(54, 162, 235)',
+                            pointBackgroundColor: 'rgb(54, 162, 235)',
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: 'rgb(54, 162, 235)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: ctx => `${ctx.label}：${ctx.raw} 分`
+                                }
+                            }
+                        },
+                        scales: {
+                            r: {
+                                angleLines: { display: true },
+                                suggestedMin: 0,
+                                suggestedMax: 100,
+                                ticks: { stepSize: 25, font: { size: 9 } }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('雷達圖載入失敗:', error);
+                if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
+            }
+        }
+
+        function scheduleNameLookup() {
+            clearTimeout(nameTimer);
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                document.getElementById('stockName').innerText = '';
+                return;
+            }
+
+            nameTimer = setTimeout(() => updateStockName(id), 350);
+        }
+
+        async function updateStockName(id) {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/name`);
+                if (!response.ok) {
+                    throw new Error('查詢失敗');
+                }
+                const data = await response.json();
+                const fallbackName = STOCK_NAME_MAP[id] || '';
+                const displayName = data.name || fallbackName;
+                document.getElementById('stockName').innerText = displayName ? `股票名稱：${displayName}` : '股票名稱：查無資料';
+            } catch (error) {
+                const fallbackName = STOCK_NAME_MAP[id] || '';
+                document.getElementById('stockName').innerText = fallbackName ? `股票名稱：${fallbackName}` : '股票名稱：查詢失敗';
+            }
+        }
+
+        function getMACDAnalysis(dif, dea, hist, prevHist, priceTrend, macdTrend, volumeTrend) {
+            if (dif > dea && hist > 0 && hist > prevHist) {
+                return {
+                    status: '多頭加速',
+                    advice: 'MACD 金叉且柱狀體增長，多頭動能強勁。',
+                    color: '#ff4d4d'
+                };
+            }
+            if (dif < dea && hist < 0 && hist < prevHist) {
+                return {
+                    status: '空頭加速',
+                    advice: 'MACD 死叉且柱狀體放大，空頭動能偏強。',
+                    color: '#28a745'
+                };
+            }
+            if (priceTrend === 'up' && macdTrend === 'down') {
+                return {
+                    status: '頂背離',
+                    advice: '價格走高但 MACD 走弱，留意高檔反轉風險。',
+                    color: '#f97316'
+                };
+            }
+            if (priceTrend === 'down' && macdTrend === 'up') {
+                return {
+                    status: '底背離',
+                    advice: '價格走低但 MACD 走強，可能出現止跌反彈。',
+                    color: '#22c55e'
+                };
+            }
+            if (hist > 0 && hist < prevHist) {
+                return {
+                    status: '動能減弱',
+                    advice: '多頭仍在，但柱狀體縮減，注意回檔。',
+                    color: '#ffa500'
+                };
+            }
+            if (hist < 0 && hist > prevHist) {
+                return {
+                    status: '空方減弱',
+                    advice: '空頭動能收斂，觀察是否止跌。',
+                    color: '#38bdf8'
+                };
+            }
+            if (volumeTrend === 'shrink') {
+                return {
+                    status: '縮量盤整',
+                    advice: '量能萎縮，短線偏盤整，等待方向突破。',
+                    color: '#6c757d'
+                };
+            }
+            return { status: '盤整', advice: '動能不明顯，等待方向突破。', color: '#6c757d' };
+        }
+
+        function getSimpleTrend(latest, previous) {
+            if (!Number.isFinite(latest) || !Number.isFinite(previous)) {
+                return 'flat';
+            }
+            if (latest > previous) {
+                return 'up';
+            }
+            if (latest < previous) {
+                return 'down';
+            }
+            return 'flat';
+        }
+
+        function getAverage(values) {
+            if (!values.length) {
+                return 0;
+            }
+            const sum = values.reduce((acc, v) => acc + v, 0);
+            return sum / values.length;
+        }
+
+        function getVolumeTrend(history, windowSize = 5) {
+            if (!Array.isArray(history) || history.length < windowSize * 2) {
+                return 'flat';
+            }
+            const recent = history.slice(-windowSize).map(d => Number(d.volume ?? 0));
+            const prior = history.slice(-windowSize * 2, -windowSize).map(d => Number(d.volume ?? 0));
+            const recentAvg = getAverage(recent);
+            const priorAvg = getAverage(prior);
+            if (recentAvg === 0 && priorAvg === 0) {
+                return 'flat';
+            }
+            return recentAvg < priorAvg * 0.85 ? 'shrink' : (recentAvg > priorAvg * 1.15 ? 'expand' : 'flat');
+        }
+
+        async function updateChart() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('line');
+
+            try {
+                // 1. 向後端抓取資料
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得股票數據');
+                }
+                const data = await response.json();
+                const normalizedData = normalizeTradingData(data);
+
+                if (normalizedData.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                updateTradingDayNote(data, normalizedData);
+                const labels = normalizedData.map(item => item.date);
+                const prices = normalizedData.map(item => item.price);
+                renderChart(labels, [{
+                    label: `${id} 收盤價`,
+                    data: prices,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]);
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取數據失敗: ' + error.message);
+            }
+        }
+
+        async function updateChartWithVolume() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('priceVolume');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得價量數據');
+                }
+                const data = await response.json();
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                const normalizedData = normalizeTradingData(data);
+                if (normalizedData.length === 0) {
+                    alert('該股票無可顯示的價量資料');
+                    return;
+                }
+
+                updateTradingDayNote(data, normalizedData);
+                switchToDualPanel();
+                destroyMainChart();
+                destroyVolumeChart();
+                const rendered = PriceChartRenderer.renderPriceVolumeCharts({
+                    Chart,
+                    priceCanvas: document.getElementById('myChart'),
+                    volumeCanvas: document.getElementById('volumeChart'),
+                    rawData: normalizedData,
+                    buildStandardHoverOptions,
+                    buildZoomPluginOptions,
+                    getActiveXFromChart,
+                    syncHoverBetweenCharts,
+                    clearSyncedHover,
+                    extraVolumeDatasetOptions: { order: 2 }
+                });
+                myChart = rendered.priceChart;
+                volumeChartInstance = rendered.volumeChart;
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取價量數據失敗: ' + error.message);
+            }
+        }
+
+        function getAdvancedDiagnosis(price, bands, prevBands) {
+            const { upper, mid, lower } = bands;
+            const slope = mid - prevBands.mid; // 判斷中軌斜率
+
+            // 1. 強勢區
+            if (price >= upper) {
+                return slope > 0
+                    ? { text: '【強勢噴發】趨勢向上且突破壓力，注意正乖離過大。', color: '#FF0000' }
+                    : { text: '【末端衝刺】趨勢走平但股價強拉，小心假突破。',   color: '#FF6600' };
+            }
+            // 2. 多頭支撐區
+            if (price > mid && price < upper) {
+                return slope > 0
+                    ? { text: '【多頭軌道】穩健上漲，中軌具備強大支撐。',   color: '#FF8C00' }
+                    : { text: '【震盪偏多】缺乏方向感，建議觀望。',         color: '#DAA520' };
+            }
+            // 3. 空頭壓力區
+            if (price <= mid && price > lower) {
+                return slope < 0
+                    ? { text: '【弱勢反彈】趨勢向下，中軌現在是沉重壓力。', color: '#0000FF' }
+                    : { text: '【震盪偏空】尋求支撐中。',                   color: '#4169E1' };
+            }
+            // 4. 超跌區
+            return slope < 0
+                ? { text: '【恐慌拋售】加速下跌，靜待止跌訊號。',         color: '#8B0000' }
+                : { text: '【箱型底部】已達支撐區，觀察是否站回中軌。',   color: '#008000' };
+        }
+
+        async function drawBollinger() {
+            const id = document.getElementById('stockId').value;
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            setActiveChartMode('bollinger');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${id}/bollinger?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得布林通道數據');
+                }
+
+                const result = await response.json();
+                const history = Array.isArray(result.history) ? result.history : [];
+                const bands = result.bands;
+
+                if (history.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                if (!bands || bands.upper == null || bands.mid == null || bands.lower == null) {
+                    alert('資料不足，無法計算布林通道（至少需要 20 筆）');
+                    return;
+                }
+
+                switchToSinglePanel();
+                const labels = history.map(item => item.date);
+                const prices = history.map(item => item.price);
+
+                const upperLine = Array(labels.length).fill(bands.upper);
+                const lowerLine = Array(labels.length).fill(bands.lower);
+                const midLine = Array(labels.length).fill(bands.mid);
+
+                const ctx = document.getElementById('myChart').getContext('2d');
+                destroyMainChart();
+
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: '收盤價', data: prices, borderColor: 'black', borderWidth: 2, fill: false },
+                            { label: '上軌 (壓力)', data: upperLine, borderColor: 'red', borderDash: [5, 5], fill: false },
+                            { label: '中軌 (MA20)', data: midLine, borderColor: 'gray', borderDash: [5, 5], fill: false },
+                            { label: '下軌 (支撐)', data: lowerLine, borderColor: 'green', borderDash: [5, 5], fill: false }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: buildStandardHoverOptions(),
+                        plugins: {
+                            legend: { position: 'top' }
+                        }
+                    }
+                });
+
+                // ── 進階布林通道位置診斷 ───────────────────────────────────
+                const currentPrice = result.history[result.history.length - 1].price;
+                const { upper, mid, lower } = result.bands;
+
+                // 計算前一根 MA20（用倒數第 2 筆到倒數第 21 筆收盤價平均）
+                let prevMid = mid; // 預設與現在相同（斜率=0）
+                if (prices.length >= 21) {
+                    const slice = prices.slice(prices.length - 21, prices.length - 1);
+                    prevMid = slice.reduce((s, v) => s + v, 0) / slice.length;
+                }
+
+                const diagnosis = getAdvancedDiagnosis(
+                    currentPrice,
+                    { upper, mid, lower },
+                    { mid: prevMid }
+                );
+                const bolColor = diagnosis.color;
+                const slope    = mid - prevMid;
+
+                const infoDiv = document.getElementById('status-box');
+                infoDiv.style.borderColor = bolColor;
+                infoDiv.innerHTML = `
+                    <h3 style="color:${bolColor}">📊 當前診斷：${diagnosis.text}</h3>
+                    <p>目前價格：<strong>${currentPrice}</strong>　／　上軌：${upper.toFixed(2)}　中軌：${mid.toFixed(2)}　下軌：${lower.toFixed(2)}</p>
+                    <p style="font-size:0.88em; color:#555;">中軌斜率（MA20 變化量）：<strong>${slope >= 0 ? '+' : ''}${slope.toFixed(2)}</strong>　→　${slope > 0 ? '📈 上揚' : slope < 0 ? '📉 下彎' : '➡️ 走平'}</p>
+                `;
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取布林通道失敗: ' + error.message);
+            }
+        }
+
+        async function drawCandlestick() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+
+            if (!ensureFinancialPluginReady()) {
+                alert('K線外掛尚未載入完成，請重新整理頁面後再試一次。');
+                return;
+            }
+
+            setActiveChartMode('candlestick');
+
+            try {
+                const timeframe = getSelectedTimeframe();
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
+                if (!response.ok) {
+                    throw new Error('無法取得 K 線資料');
+                }
+                const rawData = await response.json();
+
+                if (!Array.isArray(rawData) || rawData.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                const aggregatedData = aggregateTradingData(rawData, timeframe);
+                if (aggregatedData.length === 0) {
+                    alert('該股票無可顯示的K線資料');
+                    return;
+                }
+
+                updateTradingDayNote(rawData, normalizeTradingData(rawData));
+                const candlestickData = aggregatedData.map(d => ({
+                    x: d.x,
+                    o: d.o,
+                    h: d.h,
+                    l: d.l,
+                    c: d.c
+                }));
+                const volumeData = aggregatedData.map(d => ({
+                    x: d.x,
+                    y: Number((d.volume / 1000).toFixed(2))
+                }));
+                const ma5Data = buildMovingAverageSeries(aggregatedData, 5);
+                const ma20Data = buildMovingAverageSeries(aggregatedData, 20);
+                const ma60Data = buildMovingAverageSeries(aggregatedData, 60);
+                const ma120Data = buildMovingAverageSeries(aggregatedData, 120);
+                const priceLookup = buildPriceLookup(aggregatedData);
+                const prevCloseLookup = new Map();
+                for (let i = 1; i < aggregatedData.length; i++) {
+                    prevCloseLookup.set(Number(aggregatedData[i].x), Number(aggregatedData[i - 1].c));
+                }
+                const minX = candlestickData[0].x;
+                const maxX = candlestickData[candlestickData.length - 1].x;
+                const timeUnit = getTimeUnitForFrame(timeframe);
+                const volumeColors = aggregatedData.map(d => (d.c >= d.o ? 'rgba(220, 53, 69, 0.45)' : 'rgba(25, 135, 84, 0.45)'));
+                const volumeBorders = aggregatedData.map(d => (d.c >= d.o ? 'rgba(220, 53, 69, 0.8)' : 'rgba(25, 135, 84, 0.8)'));
+
+                const mainTooltipCallbacks = {
+                    title(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        return formatPeriodTitle(priceLookup.get(xValue), timeframe);
+                    },
+                    beforeBody(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        const item = priceLookup.get(xValue);
+                        if (!item) {
+                            return [];
+                        }
+
+                        const prevClose = prevCloseLookup.get(xValue);
+                        const compareBase = Number.isFinite(prevClose) ? prevClose : item.o;
+                        const change = item.c - compareBase;
+                        const changePct = compareBase ? (change / compareBase) * 100 : null;
+                        const amplitudePct = item.o ? ((item.h - item.l) / item.o) * 100 : null;
+                        const amplitudeText = amplitudePct == null ? '—' : `${formatNumber(amplitudePct)}%`;
+                        const prevCloseText = Number.isFinite(prevClose) ? formatNumber(prevClose) : '—';
+
+                        return [
+                            `開盤 ${formatNumber(item.o)}｜最高 ${formatNumber(item.h)}｜最低 ${formatNumber(item.l)}｜收盤 ${formatNumber(item.c)}`,
+                            `昨收 ${prevCloseText}｜與昨收比 ${formatSignedNumber(change)} (${formatSignedPercent(changePct)})｜振幅 ${amplitudeText}`,
+                            `成交量 ${formatVolume(item.volume / 1000)} 千股`
+                        ];
+                    },
+                    label(context) {
+                        if (context.dataset.type === 'candlestick') {
+                            return null;
+                        }
+                        return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                    }
+                };
+
+                const volumeTooltipCallbacks = {
+                    title(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        return formatPeriodTitle(priceLookup.get(xValue), timeframe);
+                    },
+                    beforeBody(items) {
+                        const xValue = Number(items?.[0]?.raw?.x ?? items?.[0]?.parsed?.x);
+                        const item = priceLookup.get(xValue);
+                        if (!item) {
+                            return [];
+                        }
+
+                        const prevClose = prevCloseLookup.get(xValue);
+                        const compareBase = Number.isFinite(prevClose) ? prevClose : item.o;
+                        const change = item.c - compareBase;
+                        const changePct = compareBase ? (change / compareBase) * 100 : null;
+                        const prevCloseText = Number.isFinite(prevClose) ? formatNumber(prevClose) : '—';
+
+                        return [
+                            `成交量 ${formatVolume(item.volume / 1000)} 千股`,
+                            `昨收 ${prevCloseText}｜收盤 ${formatNumber(item.c)}｜與昨收比 ${formatSignedNumber(change)} (${formatSignedPercent(changePct)})`
+                        ];
+                    },
+                    label(context) {
+                        if (context.dataset.type === 'bar') {
+                            return null;
+                        }
+                        return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                    }
+                };
+
+                function handleLinkedHover(event, activeElements, chart) {
+                    const xValue = getActiveXFromChart(chart, activeElements);
+                    if (xValue != null) {
+                        syncHoverBetweenCharts(chart, xValue);
+                    } else if (event?.native?.type === 'mouseout') {
+                        clearSyncedHover();
+                    }
+                }
+
+                switchToDualPanel();
+                document.getElementById('institutionalChartPanel').style.display = 'block';
+                const priceCtx = document.getElementById('myChart').getContext('2d');
+                const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+                destroyMainChart();
+                destroyVolumeChart();
+                destroyInstitutionalChart();
+
+                myChart = new Chart(priceCtx, {
+                    type: 'candlestick',
+                    data: {
+                        datasets: [
+                            {
+                                type: 'candlestick',
+                                label: `${id} ${timeframe === 'day' ? '日線' : timeframe === 'week' ? '週線' : '月線'}`,
+                                data: candlestickData,
+                                parsing: false,
+                                yAxisID: 'y',
+                                order: 1,
+                                color: {
+                                    up: 'red',
+                                    down: 'green',
+                                    unchanged: 'gray'
+                                }
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA5',
+                                data: ma5Data,
+                                yAxisID: 'y',
+                                borderColor: '#f59e0b',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA20',
+                                data: ma20Data,
+                                yAxisID: 'y',
+                                borderColor: '#7c3aed',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA60',
+                                data: ma60Data,
+                                yAxisID: 'y',
+                                borderColor: '#2563eb',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            },
+                            {
+                                type: 'line',
+                                label: 'MA120',
+                                data: ma120Data,
+                                yAxisID: 'y',
+                                borderColor: '#dc2626',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                spanGaps: true,
+                                tension: 0.15,
+                                order: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        interaction: buildStandardHoverOptions(),
+                        onHover: handleLinkedHover,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: mainTooltipCallbacks },
+                            zoom: buildZoomPluginOptions(() => myChart)
+                        },
+                        scales: {
+                            x: {
+                                type: 'timeseries',
+                                min: minX,
+                                max: maxX,
+                                time: { unit: timeUnit },
+                                ticks: { display: false },
+                                grid: { display: false }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: '股價' }
+                            }
+                        }
+                    }
+                });
+
+                volumeChartInstance = new Chart(volumeCtx, {
+                    data: {
+                        datasets: [
+                            {
+                                type: 'bar',
+                                label: '成交量(千股)',
+                                data: volumeData,
+                                backgroundColor: volumeColors,
+                                borderColor: volumeBorders,
+                                borderWidth: 1,
+                                barPercentage: 0.9,
+                                categoryPercentage: 0.98,
+                                order: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        interaction: buildStandardHoverOptions(),
+                        onHover: handleLinkedHover,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: volumeTooltipCallbacks },
+                            zoom: buildZoomPluginOptions(() => volumeChartInstance)
+                        },
+                        scales: {
+                            x: {
+                                type: 'timeseries',
+                                min: minX,
+                                max: maxX,
+                                time: { unit: timeUnit }
+                            },
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: '成交量(千股)' }
+                            }
+                        }
+                    }
+                });
+
+                priceCtx.canvas.onmouseleave = clearSyncedHover;
+                volumeCtx.canvas.onmouseleave = clearSyncedHover;
+                applyCandlestickOverlayVisibility();
+                await drawInstitutionalChart(id);
+                await loadMACDChart(id);
+            } catch (error) {
+                console.error('錯誤:', error);
+                alert('獲取K線數據失敗: ' + error.message);
+            }
+        }
+
+        async function loadMACDChart(symbol) {
+            const id = (symbol ?? document.getElementById('stockId').value).trim();
+            const panel = document.getElementById('macdChartPanel');
+            const ctx = document.getElementById('macdChart').getContext('2d');
+            const note = document.getElementById('macd-chart-note');
+            if (!id) {
+                destroyMacdChart();
+                panel.style.display = 'none';
+                note.innerText = '請輸入股票代碼';
+                note.style.color = '#666';
+                return;
+            }
+
+            try {
+                const [macdResp, historyResp] = await Promise.all([
+                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/macd?limit=60`),
+                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
+                ]);
+
+                if (!macdResp.ok) throw new Error('無法取得 MACD 資料');
+                const data = await macdResp.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    destroyMacdChart();
+                    panel.style.display = 'none';
+                    note.innerText = '此股票暫無 MACD 資料';
+                    note.style.color = '#666';
+                    return;
+                }
+
+                let history = [];
+                if (historyResp.ok) {
+                    const rawHistory = await historyResp.json();
+                    if (Array.isArray(rawHistory)) {
+                        history = rawHistory;
+                    }
+                }
+
+                const labels = data.map((_, i) => i + 1);
+                const difData = data.map(d => d.dif);
+                const deaData = data.map(d => d.dea);
+                const histData = data.map(d => d.histogram);
+
+                destroyMacdChart();
+                panel.style.display = 'block';
+
+                macdChartInstance = new Chart(ctx, {
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'DIF',
+                                data: difData,
+                                type: 'line',
+                                borderColor: '#007bff',
+                                borderWidth: 1,
+                                fill: false
+                            },
+                            {
+                                label: 'DEA',
+                                data: deaData,
+                                type: 'line',
+                                borderColor: '#ffa500',
+                                borderWidth: 1,
+                                fill: false
+                            },
+                            {
+                                label: '柱狀體',
+                                data: histData,
+                                type: 'bar',
+                                backgroundColor: histData.map(v => v > 0 ? '#ff4d4d' : '#28a745')
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: { beginAtZero: true, title: { display: true, text: 'MACD' } }
+                        }
+                    }
+                });
+
+                const last = data[data.length - 1];
+                const prev = data.length > 1 ? data[data.length - 2] : null;
+                const lastPrice = history.length ? Number(history[history.length - 1].price ?? history[history.length - 1].c) : NaN;
+                const prevPrice = history.length > 1 ? Number(history[history.length - 2].price ?? history[history.length - 2].c) : NaN;
+                const priceTrend = getSimpleTrend(lastPrice, prevPrice);
+                const macdTrend = getSimpleTrend(last.dif, prev ? prev.dif : NaN);
+                const volumeTrend = getVolumeTrend(history);
+                const analysis = getMACDAnalysis(last.dif, last.dea, last.histogram, prev ? prev.histogram : 0, priceTrend, macdTrend, volumeTrend);
+
+                note.innerText = `${analysis.status}｜${analysis.advice}`;
+                note.style.color = analysis.color;
+            } catch (error) {
+                destroyMacdChart();
+                panel.style.display = 'none';
+                note.innerText = `MACD 載入失敗：${error.message}`;
+                note.style.color = '#dc2626';
+                console.warn('MACD 載入失敗:', error);
+            }
+        }
+
+        async function drawInstitutionalChart(symbol) {
+            const id = (symbol ?? document.getElementById('stockId').value).trim();
+            const panel = document.getElementById('institutionalChartPanel');
+            const ctx = document.getElementById('institutionalChart').getContext('2d');
+
+            if (!id) {
+                destroyInstitutionalChart();
+                panel.style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/institutional?limit=60`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    destroyInstitutionalChart();
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                const rows = data.map(item => {
+                    const foreignBuy = Number(item.foreignBuy ?? 0);
+                    const trustBuy = Number(item.trustBuy ?? 0);
+                    const dealerBuy = Number(item.dealerBuy ?? 0);
+                    const dailyVolume = Number(item.dailyVolume ?? 0);
+                    return {
+                        date: item.date,
+                        foreignBuy,
+                        trustBuy,
+                        dealerBuy,
+                        dailyVolume,
+                        totalNetBuy: foreignBuy + trustBuy + dealerBuy
+                    };
+                });
+
+                const labels = rows.map(row => row.date);
+                const foreignData = rows.map(row => row.foreignBuy);
+                const trustData = rows.map(row => row.trustBuy);
+                const dealerData = rows.map(row => row.dealerBuy);
+                const cumulative20Data = rows.map((row, index) => {
+                    const startIndex = Math.max(0, index - 19);
+                    return Number(rows.slice(startIndex, index + 1).reduce((sum, current) => sum + current.totalNetBuy, 0).toFixed(0));
+                });
+
+                destroyInstitutionalChart();
+                panel.style.display = 'block';
+
+                institutionalChartInstance = new Chart(ctx, {
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: '外資買賣超',
+                                type: 'bar',
+                                data: foreignData,
+                                backgroundColor: foreignData.map(v => pickInstitutionalColor(v, 'rgba(220, 38, 38, 0.78)', 'rgba(34, 197, 94, 0.78)')),
+                                borderColor: foreignData.map(v => pickInstitutionalColor(v, 'rgba(185, 28, 28, 1)', 'rgba(22, 163, 74, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '投信買賣超',
+                                type: 'bar',
+                                data: trustData,
+                                backgroundColor: trustData.map(v => pickInstitutionalColor(v, 'rgba(249, 115, 22, 0.80)', 'rgba(59, 130, 246, 0.80)')),
+                                borderColor: trustData.map(v => pickInstitutionalColor(v, 'rgba(234, 88, 12, 1)', 'rgba(37, 99, 235, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '自營商買賣超',
+                                type: 'bar',
+                                data: dealerData,
+                                backgroundColor: dealerData.map(v => pickInstitutionalColor(v, 'rgba(107, 114, 128, 0.82)', 'rgba(234, 179, 8, 0.82)')),
+                                borderColor: dealerData.map(v => pickInstitutionalColor(v, 'rgba(75, 85, 99, 1)', 'rgba(202, 138, 4, 1)')),
+                                borderWidth: 1,
+                                borderRadius: 3,
+                                maxBarThickness: 14
+                            },
+                            {
+                                label: '近 20 日法人合計累積買賣超',
+                                type: 'line',
+                                yAxisID: 'y2',
+                                data: cumulative20Data,
+                                borderColor: 'rgba(124, 58, 237, 1)',
+                                backgroundColor: 'rgba(124, 58, 237, 0.15)',
+                                tension: 0.25,
+                                pointRadius: 2,
+                                pointHoverRadius: 4,
+                                borderWidth: 2,
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: buildStandardHoverOptions(),
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { font: { size: 11 } }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    title: function(items) {
+                                        const row = rows[items[0].dataIndex];
+                                        return `${row?.date || ''} 法人買賣詳情`;
+                                    },
+                                    label: function(context) {
+                                        const value = Number(context.parsed.y ?? 0);
+                                        if (context.dataset.type === 'line') {
+                                            return `${context.dataset.label}：${formatInstitutionalShares(value)}`;
+                                        }
+                                        const labelMap = {
+                                            '外資買賣超': '外資',
+                                            '投信買賣超': '投信',
+                                            '自營商買賣超': '自營商'
+                                        };
+                                        const label = labelMap[context.dataset.label] || context.dataset.label;
+                                        return `${label}：${formatInstitutionalShares(value)}`;
+                                    },
+                                    afterBody: function(items) {
+                                        const row = rows[items[0].dataIndex];
+                                        if (!row) {
+                                            return [];
+                                        }
+                                        const participation = row.dailyVolume > 0 ? (Math.abs(row.totalNetBuy) / row.dailyVolume) * 100 : 0;
+                                        return [
+                                            `三大法人合計：${formatInstitutionalShares(row.totalNetBuy)}`,
+                                            `法人成交佔比：${formatInstitutionalPercent(participation, 1)}`,
+                                            `成交量：${new Intl.NumberFormat('zh-TW').format(Math.round(row.dailyVolume))} 張`
+                                        ];
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                stacked: false,
+                                ticks: {
+                                    autoSkip: true,
+                                    maxRotation: 45,
+                                    minRotation: 0,
+                                    font: { size: 9 }
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '買賣超(股)' },
+                                ticks: {
+                                    callback: function(value) {
+                                        if (Math.abs(value) >= 10000000) {
+                                            return (value / 10000000).toFixed(1) + '千萬';
+                                        } else if (Math.abs(value) >= 10000) {
+                                            return (value / 10000).toFixed(0) + '萬';
+                                        }
+                                        return value.toLocaleString();
+                                    }
+                                }
+                            },
+                            y2: {
+                                position: 'right',
+                                beginAtZero: false,
+                                grid: {
+                                    drawOnChartArea: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: '近 20 日累積買賣超(股)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return new Intl.NumberFormat('zh-TW').format(Math.round(value));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                destroyInstitutionalChart();
+                panel.style.display = 'none';
+                console.warn('法人買賣圖表載入失敗:', error);
+            }
+        }
+
+        async function showInstitutionalOnly() {
+            const id = document.getElementById('stockId').value.trim();
+            if (!id) {
+                alert('請輸入股票代碼');
+                return;
+            }
+            setActiveChartMode('institutional');
+
+            switchToInstitutionalPanel();
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                if (!response.ok) {
+                    throw new Error('無法取得股票數據');
+                }
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    alert('該股票無歷史數據');
+                    return;
+                }
+
+                const labels = data.map(item => item.date); // 橫軸：日期
+                const prices = data.map(item => item.price); // 縱軸：價格
+
+                const priceCtx = document.getElementById('myChart').getContext('2d');
+                destroyMainChart();
+
+                myChart = new Chart(priceCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: `${id} 收盤價`,
+                            data: prices,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            fill: true,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: buildStandardHoverOptions(),
+                        plugins: { legend: { position: 'top' } },
+                        scales: { y: { title: { display: true, text: '價格' } } }
+                    }
+                });
+
+                await drawInstitutionalChart(id);
+                await updateBigHolderDiagnosisBox(id);
+            } catch (error) {
+                console.warn('法人模式切換失敗:', error);
+            }
+        }
+
+        function renderChart(labels, datasets) {
+            const ctx = document.getElementById('myChart').getContext('2d');
+            switchToSinglePanel();
+            destroyMainChart();
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: buildStandardHoverOptions(),
+                    plugins: {
+                        legend: { position: 'top' }
+                    },
+                    scales: {
+                        y: {
+                            title: { display: true, text: '價格' },
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // 頁面載入時自動載入預設股票的圖表
+        window.onload = function() {
+            const id = document.getElementById('stockId').value.trim();
+            if (id) {
+                updateStockName(id);
+                loadRadarChart(id);
+                loadChartMarketBreadth();
+            }
+            updateChart();
+        };
+
+        async function loadChartMarketBreadth() {
+            if (document.hidden) return;
+            const valueEl = document.getElementById('chart-breadth-value');
+            const barEl = document.getElementById('chart-breadth-bar');
+            const commentEl = document.getElementById('chart-breadth-comment');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/market/breadth`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const breadth = Number(data.breadth ?? 0);
+                const eligible = Number(data.eligibleCount ?? 0);
+                const bullish = Number(data.bullishCount ?? 0);
+                const safeBreadth = Number.isFinite(breadth) ? Math.max(0, Math.min(100, breadth)) : 0;
+                valueEl.innerText = `${safeBreadth.toFixed(1)}%`;
+                barEl.style.width = `${safeBreadth}%`;
+                barEl.style.backgroundColor = safeBreadth >= 70 ? '#16a34a' : (safeBreadth >=45 ? '#0d6efd' : (safeBreadth>=25? '#f59e0b': '#dc2626'));
+                commentEl.innerText = `${safeBreadth >= 50 ? '市場偏向多頭' : '市場偏向空頭'} （${bullish}/${eligible} 標的）`;
+            } catch (e) {
+                valueEl.innerText = '--%';
+                barEl.style.width = '0%';
+                commentEl.innerText = '載入失敗';
+                console.warn('chart breadth failed', e);
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) loadChartMarketBreadth();
+        });
+    </script>
+<script>
+(function(){
+    var k='stockpredictor-theme';
+    function g(){var s=localStorage.getItem(k);if(s)return s;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    function a(t){document.documentElement.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b)b.textContent=t==='dark'?'☀️':'🌙';}
+    window.toggleTheme=function(){var c=document.documentElement.getAttribute('data-theme')||'light';var n=c==='dark'?'light':'dark';localStorage.setItem(k,n);a(n);};
+    a(g());
+})();
+</script>
+</body>
+</html>

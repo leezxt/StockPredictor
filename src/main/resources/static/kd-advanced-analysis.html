@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>KD 高級動能分析 - AI 智能解讀</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', '微軟正黑體', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .top-nav {
+            margin-bottom: 12px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .search-box {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .result-panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            display: none;
+        }
+
+        .result-panel.show {
+            display: block;
+            animation: fadeInUp 0.5s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stock-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stock-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .stock-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .kd-diagnostic-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 5px solid #667eea;
+        }
+
+        .diagnostic-status {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .diagnostic-desc {
+            font-size: 16px;
+            line-height: 1.8;
+            color: #444;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .kd-values-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .kd-value-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .kd-value-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .kd-value-label {
+            font-size: 14px;
+     font-weight: 600;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .kd-value-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .signals-section {
+            margin-top: 30px;
+        }
+
+        .indicators-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .indicator-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            position: relative;
+            cursor: help;
+            transition: all 0.2s ease;
+        }
+
+        .indicator-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+        }
+
+        .indicator-name {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .indicator-value {
+            font-size: 18px;
+            color: #333;
+            font-weight: 700;
+        }
+
+        .indicator-tooltip {
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 10px);
+            transform: translateX(-50%);
+            min-width: 240px;
+            max-width: 320px;
+            background: #1f2937;
+            color: #f9fafb;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 12px;
+            line-height: 1.6;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.15s ease;
+            z-index: 20;
+            pointer-events: none;
+            text-align: left;
+        }
+
+        .indicator-tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px;
+            border-style: solid;
+            border-color: #1f2937 transparent transparent transparent;
+        }
+
+        .indicator-card:hover .indicator-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .signal-list {
+            list-style: none;
+        }
+
+        .signal-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            border-left: 4px solid #667eea;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .signal-item::before {
+            content: '✓';
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .summary-card {
+            margin-top: 24px;
+            background: #f7fbff;
+            border: 1px solid #cfe3ff;
+            border-left: 5px solid #1677ff;
+            border-radius: 10px;
+            padding: 16px 18px;
+        }
+
+        .summary-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #0b3a75;
+            margin-bottom: 8px;
+        }
+
+        .summary-content {
+            font-size: 14px;
+            line-height: 1.8;
+            color: #1f2937;
+            white-space: pre-line;
+        }
+
+        .score-display {
+            text-align: center;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .score-label {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .score-value {
+            font-size: 64px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .score-level {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        #loadingOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, 0.48);
+            backdrop-filter: blur(3px);
+        }
+
+        #loadingOverlay.active {
+            display: flex;
+        }
+
+        .workbench-loading-box {
+            width: min(430px, 100%);
+            padding: 32px 36px;
+            border-radius: 18px;
+            background: #fff;
+            text-align: center;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+        }
+
+        .kd-loading-spinner {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 18px;
+            border: 5px solid #dbeafe;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: kd-spin 0.85s linear infinite;
+        }
+
+        @keyframes kd-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .workbench-loading-title {
+            color: #4338ca;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .workbench-loading-message {
+            min-height: 22px;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .workbench-loading-track {
+            height: 9px;
+            margin-top: 18px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e2e8f0;
+        }
+
+        .workbench-loading-bar {
+            height: 100%;
+            width: 0;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #2563eb, #7c3aed);
+            transition: width 0.35s ease;
+        }
+
+        .workbench-loading-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 9px;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .error-message {
+            background: #fff3f3;
+            border: 2px solid #ff4d4f;
+            border-radius: 8px;
+            padding: 20px;
+            color: #cc0000;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .badge-success {
+            background: #52c41a;
+            color: white;
+        }
+
+        .badge-warning {
+            background: #faad14;
+            color: white;
+        }
+
+        .badge-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+
+        .badge-info {
+            background: #1890ff;
+            color: white;
+        }
+    </style>
+    <link rel="stylesheet" href="dark-mode.css">
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+    <div class="container">
+        <div class="top-nav">
+            <a class="back-link" href="index.html">← 返回主頁</a>
+        </div>
+        <div class="header">
+            <h1>🎯 KD 高級動能分析系統</h1>
+            <p>AI 智能解讀 · 專業級技術分析 · 洞察市場動能</p>
+        </div>
+
+        <div class="search-box">
+            <div class="input-group">
+                <input type="text" id="symbolInput" placeholder="請輸入股票代號（例如：2330）" value="2330">
+                <button class="btn btn-primary" id="analyzeButton" onclick="analyzeStock()">
+                    🔍 開始分析
+                </button>
+                <button class="btn btn-secondary" onclick="showExample()">
+                    💡 查看範例
+                </button>
+            </div>
+            <div style="font-size: 13px; color: #666; margin-top: 10px;">
+                💡 提示：需要至少 5 筆歷史數據才能進行完整分析
+            </div>
+        </div>
+
+        <div id="loadingOverlay" aria-live="polite" aria-busy="true">
+            <div class="workbench-loading-box">
+                <div class="kd-loading-spinner" aria-hidden="true"></div>
+                <div class="workbench-loading-title">KD 高級動能分析</div>
+                <div id="loadingMessage" class="workbench-loading-message">正在準備分析...</div>
+                <div class="workbench-loading-track">
+                    <div id="loadingProgressBar" class="workbench-loading-bar"></div>
+                </div>
+                <div class="workbench-loading-meta">
+                    <span id="loadingStep">準備中</span>
+                    <span id="loadingPercent">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultPanel" class="result-panel">
+            <div class="stock-header">
+                <div class="stock-title">
+                    <span id="stockSymbol"></span>
+                    <span id="stockName"></span>
+                </div>
+                <div class="stock-meta">
+                    <span>📅 分析日期：<span id="analysisDate"></span></span>
+                    <span>📊 資料筆數：<span id="dataCount"></span></span>
+                </div>
+            </div>
+
+            <div id="kdDiagnosticCard" class="kd-diagnostic-card">
+                <div class="diagnostic-status" id="diagnosticStatus"></div>
+                <div class="diagnostic-desc" id="diagnosticDesc"></div>
+            </div>
+
+            <div class="score-display">
+                <div class="score-label">KD 動能綜合評分</div>
+                <div class="score-value" id="scoreValue">--</div>
+                <div class="score-level" id="scoreLevel">--</div>
+            </div>
+
+            <div class="kd-values-grid">
+                <div class="kd-value-card">
+                    <div class="kd-value-label">K 值</div>
+                    <div class="kd-value-number" id="kValue">--</div>
+                </div>
+                <div class="kd-value-card">
+                    <div class="kd-value-label">D 值</div>
+                    <div class="kd-value-number" id="dValue">--</div>
+                </div>
+                <div class="kd-value-card">
+                    <div class="kd-value-label">收盤價</div>
+                    <div class="kd-value-number" id="closePrice">--</div>
+                </div>
+            </div>
+
+            <div class="signals-section">
+                <div class="section-title">🧭 擴充指標總覽</div>
+                <div class="indicators-grid" id="extendedIndicatorsGrid"></div>
+            </div>
+
+            <div class="signals-section">
+                <div class="section-title">📊 檢測到的關鍵信號</div>
+                <ul class="signal-list" id="signalList"></ul>
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-title">🧠 總結建議（分析師觀點）</div>
+                <div class="summary-content" id="summaryAdvice">請先輸入股票代號開始分析。</div>
+            </div>
+        </div>
+
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        const allowLocalFallback = window.location.protocol === 'file:' ||
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1';
+
+        async function fetchApi(path, init) {
+            try {
+                const response = await fetch(path, init);
+                if (response.status !== 404 || !allowLocalFallback) {
+                    return response;
+                }
+            } catch (error) {
+                if (!allowLocalFallback) {
+                    throw error;
+                }
+            }
+            const currentPort = localStorage.getItem('api-port') || '19090';
+            return fetch(`http://localhost:${currentPort}${path}`, init);
+        }
+
+        function resolveLatestClosePrice(histData) {
+            if (!Array.isArray(histData) || histData.length === 0) {
+                return 0;
+            }
+
+            let latestPrice = 0;
+            let latestTs = Number.NEGATIVE_INFINITY;
+
+            for (const item of histData) {
+                if (!item) continue;
+                const closeCandidate = Number(item.c ?? item.price ?? 0);
+                if (!Number.isFinite(closeCandidate) || closeCandidate <= 0) continue;
+
+                const tradeDate = String(item.t ?? item.date ?? '').trim();
+                const normalizedDate = tradeDate ? tradeDate.replace(/\//g, '-') : '';
+                const ts = normalizedDate ? Date.parse(normalizedDate) : Number.NaN;
+
+                if (Number.isFinite(ts)) {
+                    if (ts >= latestTs) {
+                        latestTs = ts;
+                        latestPrice = closeCandidate;
+                    }
+                } else {
+                    latestPrice = closeCandidate;
+                }
+            }
+
+            return latestPrice > 0 ? latestPrice : 0;
+        }
+
+        /**
+         * KD 診斷邏輯 - AI 智能解讀
+         * @param {Object} kdDetail - KD 詳細資料
+         * @returns {Object} 診斷結果
+         */
+        function toNumber(value) {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : Number.NaN;
+        }
+
+        function format2(value) {
+            return Number.isFinite(value) ? value.toFixed(2) : '--';
+        }
+
+        function getKdDiagnostic(kdDetail) {
+            const indicators = kdDetail.extendedIndicators || {};
+            const diagnosisHint = String(kdDetail.diagnosis || '').trim();
+            const rsi = toNumber(indicators.rsi);
+            const mfi = toNumber(indicators.mfi);
+            const macdDif = toNumber(indicators.macdDif);
+            const macdDea = toNumber(indicators.macdDea);
+            const macdHistogram = toNumber(indicators.macdHistogram);
+            const cmf = toNumber(indicators.cmf);
+            const atrPct = toNumber(indicators.atrPct);
+            const obvStrength = toNumber(indicators.obvStrength);
+            const aroonOscillator = toNumber(indicators.aroonOscillator);
+            const superTrendLabel = String(indicators.superTrendLabel || '中性');
+            const diagnosisText = diagnosisHint || '目前屬於盤整收斂區，代表股價暫時沒有明確往上或往下突破，市場正在等待下一個方向。';
+
+            // 高檔鈍化（飆股基因）
+            if (kdDetail.highPassivation) {
+                return {
+                    status: "🔥 高檔狂熱鈍化",
+                    desc: "指標進入軋空強勢期，K值已連續多日大於80。這段時間更像是趨勢延伸而不是終點，操作上以順勢持有、拉回不破支撐為主，直到動能明顯跌破 80 再評估減碼。",
+                    color: "#ff4d4f",
+                    level: "極強"
+                };
+            }
+
+            // 低檔鈍化（避免抄底）
+            if (kdDetail.lowPassivation) {
+                return {
+                    status: "⚠️ 低檔疲弱鈍化",
+                    desc: "K值連續多日低於20，顯示動能極度疲弱。這不是急著抄底的訊號，而是提醒市場仍在消化賣壓；必須等黃金交叉、底背離或量價轉強同時出現，才有較高勝率的切入點。",
+                    color: "#faad14",
+                    level: "極弱"
+                };
+            }
+
+            // 中軸黃金交叉
+            if (kdDetail.isGoldenCross && kdDetail.nearFifty) {
+                return {
+                    status: "⚡ 中軸強勢交叉",
+                    desc: "KD 在 50 分界線附近完成黃金交叉，代表多方重新拿回主導權。這通常不是追高點，而是整理後的再發動，若同步看到 RSI 與 MACD 轉強，波段延續的可信度會更高。",
+                    color: "#73d13d",
+                    level: "強"
+                };
+            }
+
+            // 低檔黃金交叉
+            if (kdDetail.isGoldenCross && kdDetail.isLowZone) {
+                return {
+                    status: "✅ 低檔黃金交叉",
+                    desc: "K 線在低檔區向上穿越 D 線，這是典型的打底訊號。若同時看到 MFI、CMF 轉正，代表籌碼與資金也開始站回多方，屬於可以分批布局的區域。",
+                    color: "#52c41a",
+                    level: "中強"
+                };
+            }
+
+            // 低檔背離
+            if (kdDetail.lowDivergence) {
+                return {
+                    status: "🚀 底背離轉折現形",
+                    desc: "股價仍在走低，但 KD 低點一底比一底高，代表動能已先行修復。若同步搭配 OBV 轉強與 ATR 收斂，通常是底部換手完成、反轉行情醞釀中的訊號。",
+                    color: "#1890ff",
+                    level: "強"
+                };
+            }
+
+            // 高檔死亡交叉
+            if (kdDetail.isDeathCross && kdDetail.isHighZone) {
+                return {
+                    status: "⬇️ 高檔死亡交叉",
+                    desc: "K 線在高檔區向下穿越 D 線，代表短線買盤開始退潮。若同時 MACD 柱狀體縮短、RSI/MFI 轉弱，通常是波段獲利了結的較佳時點。",
+                    color: "#ff7a45",
+                    level: "轉弱"
+                };
+            }
+
+            // 一般黃金交叉
+            if (kdDetail.isGoldenCross) {
+                return {
+                    status: "📈 黃金交叉",
+                    desc: "K 線向上穿越 D 線，動能轉強。這是多頭重新接手的基本訊號，但仍需看 SuperTrend、CMF 與 MACD 是否同步翻多，才能確認是不是有效突破。",
+                    color: "#52c41a",
+                    level: "中性偏多"
+                };
+            }
+
+            // 一般死亡交叉
+            if (kdDetail.isDeathCross) {
+                return {
+                    status: "📉 死亡交叉",
+                    desc: "K 線向下穿越 D 線，短線動能轉弱。若 RSI、MFI 沒有止穩、且 CMF 仍在負值區，這通常不是假跌破，而是要先降風險的訊號。",
+                    color: "#ff7a45",
+                    level: "中性偏空"
+                };
+            }
+
+            // 預設盤整狀態
+            const isBullishBias = superTrendLabel === '多頭' || (Number.isFinite(cmf) && cmf >= 0.08) || (Number.isFinite(macdDif) && Number.isFinite(macdDea) && macdDif >= macdDea);
+            const isBearishBias = superTrendLabel === '空頭' || (Number.isFinite(cmf) && cmf <= -0.08) || (Number.isFinite(macdDif) && Number.isFinite(macdDea) && macdDif < macdDea);
+            const valueComment = [];
+            valueComment.push(`KD 目前在 ${format2(Number(kdDetail.kValue))} / ${format2(Number(kdDetail.dValue))} 附近整理，屬於市場等待方向表態的階段。`);
+            valueComment.push(`RSI ${format2(rsi)}、MFI ${format2(mfi)}，如果都落在中性區，代表多空尚未分出明顯勝負。`);
+            if (Number.isFinite(macdDif) && Number.isFinite(macdDea)) {
+                valueComment.push(`MACD ${macdDif >= macdDea ? '維持偏多結構' : '尚未完成翻多'}，柱狀體 ${Number.isFinite(macdHistogram) ? (macdHistogram >= 0 ? '偏正' : '偏負') : '未提供'}，顯示趨勢仍在確認。`);
+            }
+            if (isBullishBias && !isBearishBias) {
+                valueComment.push('SuperTrend 與資金流仍偏多，這種盤整較像蓄勢，不像明顯出貨。');
+            } else if (isBearishBias && !isBullishBias) {
+                valueComment.push('趨勢與資金訊號偏弱，整理更像弱勢反彈或換手修復。');
+            } else {
+                valueComment.push('趨勢與資金流尚未同步，建議等突破箱頂或跌破箱底後再定方向。');
+            }
+            if (Number.isFinite(atrPct) && atrPct > 0) {
+                valueComment.push(`ATR/收盤約 ${format2(atrPct)}%，${atrPct >= 6 ? '波動偏大，倉位要收斂。' : '波動相對收斂，適合耐心等待確認。'}`);
+            }
+            if (Number.isFinite(obvStrength)) {
+                valueComment.push(`OBV 強度約 ${format2(obvStrength)}%，${obvStrength >= 12 ? '量價結構偏多。' : obvStrength <= -12 ? '量價結構偏空。' : '量能方向仍在觀察。'}`);
+            }
+            if (Number.isFinite(aroonOscillator)) {
+                valueComment.push(`Aroon Oscillator 約 ${format2(aroonOscillator)}，${aroonOscillator >= 35 ? '趨勢仍偏多方主導。' : aroonOscillator <= -35 ? '趨勢仍偏空方主導。' : '趨勢仍在均衡帶。'}`);
+            }
+            valueComment.push(diagnosisText);
+            return {
+                status: "📊 盤整收斂區",
+                desc: valueComment.join(' '),
+                color: "#bfbfbf",
+                level: "中性"
+            };
+        }
+
+        /**
+         * 分析股票（真實 API 版本）
+         */
+        async function analyzeStock() {
+            const symbol = document.getElementById('symbolInput').value.trim();
+            if (!symbol) {
+                showError('請輸入股票代號');
+                return;
+            }
+
+            let analysisSucceeded = false;
+            showLoading();
+            hideError();
+            hideResult();
+
+            try {
+                // 同時請求 KD 分析資料與最新行情
+                const encodedSymbol = encodeURIComponent(symbol);
+                updateLoadingProgress(10, '正在連線至分析服務...', '步驟 1 / 5');
+                let completedRequests = 0;
+                const trackRequest = async (request, label) => {
+                    const response = await request;
+                    completedRequests += 1;
+                    const pct = completedRequests === 1 ? 32 : 52;
+                    updateLoadingProgress(pct, `${label}載入完成`, `資料 ${completedRequests} / 2`);
+                    return response;
+                };
+                const [kdResponse, histResponse] = await Promise.all([
+                    trackRequest(fetchApi(`/api/stocks/${encodedSymbol}/kd?limit=120`), 'KD 指標'),
+                    trackRequest(fetchApi(`/api/stocks/${encodedSymbol}/history?limit=5`), '近期行情')
+                ]);
+
+                if (!kdResponse.ok) {
+                    if (kdResponse.status === 404) {
+                        throw new Error(`找不到 KD 分析 API（HTTP 404）。請確認：\n1. 後端服務是否正常運行\n2. 股票代號「${symbol}」是否正確（台股格式如：2330、0050）`);
+                    } else if (kdResponse.status === 500) {
+                        throw new Error(`伺服器內部錯誤（HTTP 500），請查看後端日誌。股票代號：${symbol}`);
+                    } else {
+                        throw new Error(`KD API 回傳錯誤（HTTP ${kdResponse.status}），股票代號：${symbol}`);
+                    }
+                }
+
+                updateLoadingProgress(62, '正在解析 KD 與行情資料...', '步驟 2 / 5');
+                const kdInfo = await kdResponse.json();
+                const histData = histResponse.ok ? await histResponse.json() : [];
+
+                // 取最新交易日收盤價（依日期挑最大值，避免陣列順序造成誤判）
+                const closePrice = Number.isFinite(Number(kdInfo.latestClosePrice)) && Number(kdInfo.latestClosePrice) > 0
+                    ? Number(kdInfo.latestClosePrice)
+                    : resolveLatestClosePrice(histData);
+
+                // 取 KD 序列
+                const kdSeries = kdInfo.kdSeries || [];
+                if (kdSeries.length === 0) {
+                    throw new Error('KD 歷史資料不足，無法進行分析。請稍後再試或嘗試其他股票代號。');
+                }
+
+                // 最新與前一筆 KD 值
+                const last = kdSeries[kdSeries.length - 1];
+                const prev = kdSeries.length > 1 ? kdSeries[kdSeries.length - 2] : last;
+                const kValue = last.k;
+                const dValue = last.d;
+
+                // 計算技術特徵旗標
+                const last3k = kdSeries.slice(-3).map(r => r.k);
+                const highPassivation = last3k.length === 3 && last3k.every(k => k >= 80);
+                const lowPassivation  = kdInfo.lowPassivation || (last3k.length === 3 && last3k.every(k => k <= 20));
+
+                const wasKBelowD  = prev.k < prev.d;
+                const isKAboveD   = last.k > last.d;
+                const wasKAboveD  = prev.k >= prev.d;
+                const isKBelowD   = last.k <= last.d;
+
+                const isGoldenCross = wasKBelowD && isKAboveD;
+                const isDeathCross  = wasKAboveD && isKBelowD;
+                const nearFifty     = kValue >= 45 && kValue <= 55;
+                const isLowZone     = kValue < 30;
+                const isHighZone    = kValue > 70;
+
+                // 底背離：優先使用後端計算結果，或從訊號文字偵測
+                const lowDivergence = kdInfo.bottomDivergence ||
+                    (kdInfo.advancedSignals || []).some(s => s.includes('背離'));
+
+                updateLoadingProgress(76, '正在計算交叉、鈍化與背離訊號...', '步驟 3 / 5');
+
+                // 組合前端所需資料物件
+                const data = {
+                    kValue,
+                    dValue,
+                    closePrice,
+                    score: kdInfo.advancedScore || 0,
+                    extendedIndicators: kdInfo.extendedIndicators || {},
+                    diagnosis: kdInfo.diagnosis || '',
+                    signals: (kdInfo.advancedSignals && kdInfo.advancedSignals.length > 0)
+                        ? kdInfo.advancedSignals
+                        : [kdInfo.diagnosis || '📊 KD 訊號中性，持續觀察'],
+                    highPassivation,
+                    lowPassivation,
+                    isGoldenCross,
+                    isDeathCross,
+                    nearFifty,
+                    isLowZone,
+                    isHighZone,
+                    lowDivergence,
+                    dataCount: kdSeries.length
+                };
+
+                updateLoadingProgress(88, '正在取得股票名稱與基本資訊...', '步驟 4 / 5');
+                const stockName = await fetchStockNameFromAPI(symbol);
+
+                updateLoadingProgress(96, '正在產生分析師觀點與畫面...', '步驟 5 / 5');
+                displayResult(symbol, data, stockName);
+                analysisSucceeded = true;
+            } catch (error) {
+                showError('分析失敗：' + error.message);
+            } finally {
+                hideLoading(analysisSucceeded);
+            }
+        }
+
+
+        /**
+         * 顯示分析結果
+         */
+        function displayResult(symbol, data, stockName) {
+            // 獲取 AI 診斷
+            const diagnostic = getKdDiagnostic(data);
+
+            // 更新股票資訊
+            document.getElementById('stockSymbol').textContent = symbol;
+            const stockNameElement = document.getElementById('stockName');
+            stockNameElement.textContent = stockName || getStockName(symbol);
+
+            document.getElementById('analysisDate').textContent = new Date().toLocaleDateString('zh-TW');
+            document.getElementById('dataCount').textContent = (data.dataCount || 0) + ' 筆';
+
+            // 更新診斷卡片
+            const diagnosticCard = document.getElementById('kdDiagnosticCard');
+            diagnosticCard.style.borderLeftColor = diagnostic.color;
+            diagnosticCard.style.background = `linear-gradient(135deg, ${diagnostic.color}15 0%, ${diagnostic.color}05 100%)`;
+
+            document.getElementById('diagnosticStatus').innerHTML = diagnostic.status;
+            document.getElementById('diagnosticStatus').style.color = diagnostic.color;
+            document.getElementById('diagnosticDesc').textContent = diagnostic.desc;
+
+            // 更新評分
+            document.getElementById('scoreValue').textContent = data.score >= 0 ? `+${data.score}` : data.score;
+            document.getElementById('scoreLevel').textContent = `動能等級：${diagnostic.level}`;
+
+            // 根據評分調整顏色
+            const scoreDisplay = document.querySelector('.score-display');
+            if (data.score >= 20) {
+                scoreDisplay.style.background = 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)';
+            } else if (data.score >= 10) {
+                scoreDisplay.style.background = 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)';
+            } else if (data.score >= -5) {
+                scoreDisplay.style.background = 'linear-gradient(135deg, #bfbfbf 0%, #8c8c8c 100%)';
+            } else {
+                scoreDisplay.style.background = 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)';
+            }
+
+            // 更新 K/D 值
+            document.getElementById('kValue').textContent = data.kValue.toFixed(2);
+            document.getElementById('dValue').textContent = data.dValue.toFixed(2);
+            document.getElementById('closePrice').textContent = data.closePrice.toFixed(2);
+
+            renderExtendedIndicators(data.extendedIndicators || {});
+
+            // 更新信號列表
+            const signalList = document.getElementById('signalList');
+            signalList.innerHTML = '';
+            data.signals.forEach(signal => {
+                const li = document.createElement('li');
+                li.className = 'signal-item';
+                li.textContent = signal;
+                signalList.appendChild(li);
+            });
+
+            document.getElementById('summaryAdvice').textContent = buildSummaryAdvice(data, diagnostic);
+
+            // 顯示結果面板
+            showResult();
+        }
+
+        function buildSummaryAdvice(data, diagnostic) {
+            const indicators = data.extendedIndicators || {};
+            const score = Number(data.score || 0);
+            const k = Number(data.kValue || 0);
+            const d = Number(data.dValue || 0);
+            const rsi = Number(indicators.rsi);
+            const mfi = Number(indicators.mfi);
+            const superTrend = String(indicators.superTrendLabel || '中性');
+            const aroon = Number(indicators.aroonOscillator);
+            const atrPct = Number(indicators.atrPct);
+
+            let stance = "中性觀察";
+            if (score >= 25) stance = "偏多積極";
+            else if (score >= 10) stance = "偏多保守";
+            else if (score <= -15) stance = "偏空防守";
+            else if (score <= -5) stance = "偏空觀望";
+
+            let stanceComment = "目前方向還不算很明確，先以觀察為主。";
+            if (score >= 25) {
+                stanceComment = "目前偏多，代表市場氣氛較強，但若已經漲了一段，分批進場會比一次追高更穩。";
+            } else if (score >= 10) {
+                stanceComment = "目前偏多，短線有機會續強，但比較適合等回檔再布局，不急著一次買滿。";
+            } else if (score <= -15) {
+                stanceComment = "目前偏空，代表賣壓還在，先以保守觀察為主，等止跌訊號出現再說。";
+            } else if (score <= -5) {
+                stanceComment = "目前偏弱，反彈不一定代表轉強，先把重點放在風險控管。";
+            }
+
+            const momentumComment =
+                k > d ? "K 值站在 D 值上方，表示短線買氣稍微占上風。"
+                : "K 值還在 D 值下方，表示短線賣壓仍沒有完全退去。";
+
+            let trendComment = `趨勢工具目前顯示為「${superTrend}」，Aroon 震盪值 ${Number.isFinite(aroon) ? aroon.toFixed(2) : '-'}。`;
+            if (superTrend === '多頭' && Number.isFinite(aroon) && aroon >= 35) {
+                trendComment += " 這通常代表走勢還偏強，順勢看待會比較合理。";
+            } else if (superTrend === '空頭' && Number.isFinite(aroon) && aroon <= -35) {
+                trendComment += " 這通常代表走勢還偏弱，先保守一點會比較安全。";
+            } else {
+                trendComment += " 這代表方向還在拉扯，先別急著重押。";
+            }
+
+            let heatComment = "";
+            if (Number.isFinite(rsi) || Number.isFinite(mfi)) {
+                const rsiText = Number.isFinite(rsi) ? `RSI ${rsi.toFixed(2)}` : "RSI 無資料";
+                const mfiText = Number.isFinite(mfi) ? `MFI ${mfi.toFixed(2)}` : "MFI 無資料";
+                heatComment = `${rsiText}、${mfiText}。`;
+                if ((Number.isFinite(rsi) && rsi >= 75) || (Number.isFinite(mfi) && mfi >= 80)) {
+                    heatComment += " 這代表有點熱，追價前先想好要在哪裡停利。";
+                } else if ((Number.isFinite(rsi) && rsi <= 30) || (Number.isFinite(mfi) && mfi <= 20)) {
+                    heatComment += " 這代表價格有機會在低檔喘口氣，但還要等轉強訊號確認。";
+                } else {
+                    heatComment += " 這代表目前不算過熱也不算過冷，還在等待方向確認。";
+                }
+            }
+
+            let riskComment = "";
+            if (Number.isFinite(atrPct) && atrPct > 0) {
+                riskComment = `波動風險（ATR/收盤）約 ${atrPct.toFixed(2)}%。`;
+                if (atrPct >= 6) {
+                    riskComment += " 代表價格上下跑得比較快，部位先小一點會比較好。";
+                } else if (atrPct <= 2.5) {
+                    riskComment += " 代表波動比較穩，適合耐心等確認後再分批。";
+                }
+            }
+
+            return [
+                `整體來看：${stance}（KD 綜合評分 ${score >= 0 ? '+' : ''}${score}，診斷等級：${diagnostic.level}）。`,
+                stanceComment,
+                momentumComment,
+                trendComment,
+                heatComment,
+                riskComment
+            ].filter(Boolean).join('\n');
+        }
+
+        function renderExtendedIndicators(indicators) {
+            const grid = document.getElementById('extendedIndicatorsGrid');
+            if (!grid) return;
+
+            const defs = [
+                { key: 'rsi', label: '相對強弱指標（RSI）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：RSI 反映買賣力道平衡。70 以上偏過熱，30 以下偏超賣，需搭配趨勢位階判讀，避免單點逆勢抄底。' },
+                { key: 'macdDif', label: '平滑異同移動平均-DIF（MACD DIF）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：DIF 是短中期動能差值。DIF 向上且擴大，代表多方動能增溫；反之顯示漲勢放緩。' },
+                { key: 'macdDea', label: '平滑異同移動平均-DEA（MACD DEA）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：DEA 是 DIF 的平滑線，常作為趨勢濾網。DIF 站上 DEA，勝率通常優於單看價格突破。' },
+                { key: 'macdHistogram', label: '平滑異同移動平均柱狀體（MACD Histogram）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：柱狀體代表動能加速度。由負轉正常是趨勢翻多早期訊號；高檔縮短則須提防背離。' },
+                { key: 'superTrendLabel', label: '超級趨勢（SuperTrend）', format: v => String(v || '-'), desc: '分析師觀點：SuperTrend 著重順勢持有。維持多頭代表回檔仍在可控趨勢內；翻空時優先做風險收縮。' },
+                { key: 'donchianPositionPct', label: '唐奇安通道位置（Donchian）', format: v => `${Number(v).toFixed(2)}%`, desc: '分析師觀點：位置越接近上軌，代表突破強度越高；長時間貼下軌則多為弱勢結構，宜降低追價。' },
+                { key: 'cmf', label: '蔡金資金流量（CMF）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：CMF 結合價格與成交量，觀察資金是否實際流入。連續為正通常是上漲結構更健康的訊號。' },
+                { key: 'mfi', label: '資金流量指標（MFI）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：MFI 是含量能版 RSI。高檔鈍化不一定立刻轉弱，但若同時失守趨勢線，回撤機率顯著上升。' },
+                { key: 'obvStrength', label: '能量潮強度（OBV）', format: v => `${Number(v).toFixed(2)}%`, desc: '分析師觀點：OBV 強度用來看量能是否先行。價漲量增最健康；價漲量縮則偏向末段拉抬。' },
+                { key: 'atr', label: '平均真實波幅（ATR）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：ATR 是風險尺。ATR 上升代表波動擴大，停損需同步放寬；ATR 收斂常出現在趨勢整理末端。' },
+                { key: 'atrPct', label: '平均真實波幅佔比（ATR/收盤）', format: v => `${Number(v).toFixed(2)}%`, desc: '分析師觀點：ATR 佔比可橫向比較不同股票風險。比率越高，倉位管理越要保守。' },
+                { key: 'cci', label: '商品通道指數（CCI）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：CCI > 100 常見於趨勢加速段；CCI < -100 則代表弱勢慣性仍在，反彈以技術反抽視之。' },
+                { key: 'williamsR', label: '威廉指標（Williams %R）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：Williams %R 對短線轉折敏感。貼近 0 為高檔、貼近 -100 為低檔，需與成交量確認真偽突破。' },
+                { key: 'aroonOscillator', label: '阿隆震盪指標（Aroon Oscillator）', format: v => `${Number(v).toFixed(2)}`, desc: '分析師觀點：Aroon Oscillator 衡量趨勢主導權。數值持續偏正代表多方掌控節奏；轉負則防守優先。' }
+            ];
+
+            const cards = defs
+                .filter(def => indicators[def.key] !== undefined && indicators[def.key] !== null)
+                .map(def => {
+                    const value = def.format(indicators[def.key]);
+                    return `
+                        <div class="indicator-card">
+                            <div class="indicator-name">${def.label}</div>
+                            <div class="indicator-value">${value}</div>
+                            <div class="indicator-tooltip">${def.desc}</div>
+                        </div>
+                    `;
+                });
+
+            grid.innerHTML = cards.length > 0
+                ? cards.join('')
+                : '<div class="indicator-card"><div class="indicator-name">提示</div><div class="indicator-value">暫無擴充指標資料</div></div>';
+        }
+
+        /**
+         * 獲取股票名稱（擴展版本）
+         */
+        function getStockName(symbol) {
+            const names = {
+                // 權值股
+                '2330': '台積電',
+                '2317': '鴻海',
+                '2454': '聯發科',
+                '2308': '台達電',
+                '2412': '中華電',
+                '2881': '富邦金',
+                '2882': '國泰金',
+                '2886': '兆豐金',
+                '2891': '中信金',
+                '2892': '第一金',
+                '2884': '玉山金',
+                '2880': '華南金',
+                '2887': '台新金',
+                '5880': '合庫金',
+
+                // 電子股
+                '2303': '聯電',
+                '2379': '瑞昱',
+                '2382': '廣達',
+                '2395': '研華',
+                '3008': '大立光',
+                '2357': '華碩',
+                '2385': '群光',
+                '3711': '日月光投控',
+                '2408': '南亞科',
+                '3034': '聯詠',
+                '2409': '友達',
+                '3037': '欣興',
+                '6505': '台塑化',
+                '2327': '國巨',
+                '2301': '光寶科',
+                '2344': '華邦電',
+                '2377': '微星',
+                '2324': '仁寶',
+                '2356': '英業達',
+                '3045': '台灣大',
+                '4938': '和碩',
+                '6669': '緯穎',
+
+                // 傳產股
+                '1301': '台塑',
+                '1303': '南亞',
+                '1326': '台化',
+                '2002': '中鋼',
+                '2207': '和泰車',
+                '2801': '彰銀',
+                '2912': '統一超',
+                '5871': '中租-KY',
+                '9910': '豐泰',
+                '2105': '正新',
+                '2603': '長榮',
+                '2609': '陽明',
+                '2615': '萬海',
+
+                // ETF
+                '0050': '元大台灣50',
+                '0056': '元大高股息',
+                '006208': '富邦台50',
+                '00878': '國泰永續高股息',
+                '00692': '富邦公司治理',
+                '00850': '元大臺灣ESG永續',
+                '00881': '國泰台灣5G+',
+                '00900': '富邦特選高股息30',
+                '00713': '元大台灣高息低波',
+                '00757': '統一FANG+',
+
+                // 其他熱門股
+                '2379': '瑞昱',
+                '3231': '緯創',
+                '6147': '頎邦',
+                '3443': '創意',
+                '2603': '長榮',
+                '2618': '長榮航',
+                '5269': '祥碩',
+                '3702': '大聯大',
+                '2002': '中鋼'
+            };
+
+            // 如果找不到，顯示股票代號
+            return names[symbol] || `股票代號 ${symbol}`;
+        }
+
+        /**
+         * 從後端 API 獲取股票名稱（如果可用）
+         */
+        async function fetchStockNameFromAPI(symbol) {
+            try {
+                // 使用正確的後端 API 路徑取得股票名稱
+                const response = await fetchApi(`/api/stocks/${encodeURIComponent(symbol)}/name`);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.name || getStockName(symbol);
+                }
+            } catch (error) {
+                console.log('使用本地股票名稱映射');
+            }
+            return getStockName(symbol);
+        }
+
+        /**
+         * 顯示範例
+         */
+        function showExample() {
+            document.getElementById('symbolInput').value = '2330';
+            analyzeStock();
+        }
+
+        /**
+         * 顯示/隱藏 Loading
+         */
+        function showLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.add('active');
+            document.getElementById('analyzeButton').disabled = true;
+            updateLoadingProgress(5, '正在準備 KD 動能分析...', '準備中');
+        }
+
+        function updateLoadingProgress(percent, message, step) {
+            const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+            document.getElementById('loadingProgressBar').style.width = `${safePercent}%`;
+            document.getElementById('loadingPercent').textContent = `${Math.round(safePercent)}%`;
+            document.getElementById('loadingMessage').textContent = message || '分析中...';
+            document.getElementById('loadingStep').textContent = step || '';
+        }
+
+        function hideLoading(succeeded) {
+            updateLoadingProgress(
+                100,
+                succeeded ? '分析完成' : '分析未完成，請查看錯誤訊息',
+                succeeded ? '完成' : '失敗'
+            );
+            window.setTimeout(() => {
+                document.getElementById('loadingOverlay').classList.remove('active');
+                document.getElementById('analyzeButton').disabled = false;
+            }, 350);
+        }
+
+        /**
+         * 顯示/隱藏結果
+         */
+        function showResult() {
+            document.getElementById('resultPanel').classList.add('show');
+        }
+
+        function hideResult() {
+            document.getElementById('resultPanel').classList.remove('show');
+        }
+
+        /**
+         * 顯示/隱藏錯誤訊息
+         */
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        // Enter 鍵觸發分析
+        document.getElementById('symbolInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                analyzeStock();
+            }
+        });
+
+        // 頁面載入時自動分析範例
+        window.addEventListener('load', function() {
+            showExample();
+        });
+    </script>
+<script>
+(function(){
+    var k='stockpredictor-theme';
+    function g(){var s=localStorage.getItem(k);if(s)return s;return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    function a(t){document.documentElement.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b)b.textContent=t==='dark'?'☀️':'🌙';}
+    window.toggleTheme=function(){var c=document.documentElement.getAttribute('data-theme')||'light';var n=c==='dark'?'light':'dark';localStorage.setItem(k,n);a(n);};
+    a(g());
+})();
+</script>
+</body>
+</html>

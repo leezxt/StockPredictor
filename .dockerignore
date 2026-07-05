@@ -1,0 +1,8 @@
+target
+dist
+.idea
+.github
+*.log
+*.out
+*.db
+!packaging-assets/stockdb.mv.db

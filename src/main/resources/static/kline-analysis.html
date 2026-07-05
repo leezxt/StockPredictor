@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StockPredictor | K線掃描分析</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+    <link rel="stylesheet" href="dark-mode.css">
+    <style>
+        :root {
+            --primary: #1e3c72;
+            --primary-grad: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            --bull: #e74c3c;
+            --bear: #2ecc71;
+            --neutral: #6c757d;
+            --panel-bg: #fff;
+            --border-r: 12px;
+        }
+        body { background: #f0f4f8; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; }
+        .hero {
+            background: var(--primary-grad);
+            color: #fff;
+            padding: 28px 0 20px;
+            margin-bottom: 0;
+            box-shadow: 0 4px 16px rgba(30,60,114,0.18);
+        }
+        .hero h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: 1px; }
+        .hero .lead { font-size: 0.95rem; opacity: 0.8; }
+        .search-row { display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+        .search-row input { max-width: 160px; }
+
+        /* Tab styling */
+        .tab-nav { background: #fff; border-bottom: 2px solid #e2e8f0; padding: 0 20px; }
+        .tab-nav .nav-link { color: #64748b; font-weight: 600; border: none; border-bottom: 3px solid transparent; padding: 12px 20px; border-radius: 0; transition: all 0.2s; }
+        .tab-nav .nav-link.active { color: var(--primary); border-bottom-color: var(--primary); background: transparent; }
+        .tab-nav .nav-link:hover { color: var(--primary); background: #f1f5f9; }
+
+        /* Chart panels */
+        .chart-card { background: var(--panel-bg); border-radius: var(--border-r); box-shadow: 0 4px 16px rgba(0,0,0,0.06); margin-bottom: 10px; padding: 12px 14px; }
+        .chart-card .chart-title { font-size: 0.8rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        canvas { display: block; }
+
+        /* Analyst panel */
+        .analyst-panel { background: var(--panel-bg); border-radius: var(--border-r); box-shadow: 0 4px 16px rgba(0,0,0,0.06); height: calc(100% - 0px); overflow-y: auto; max-height: 860px; }
+        .analyst-section { border-bottom: 1px solid #f1f5f9; padding: 14px 16px; }
+        .analyst-section:last-child { border-bottom: none; }
+        .analyst-section .sec-title { font-size: 0.85rem; font-weight: 800; color: var(--primary); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .pattern-badge { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; margin: 2px; }
+        .badge-bull { background: #fee2e2; color: #b91c1c; }
+        .badge-bear { background: #dcfce7; color: #15803d; }
+        .badge-neutral { background: #f1f5f9; color: #475569; }
+        .analyst-text { font-size: 0.82rem; color: #475569; line-height: 1.65; margin-top: 8px; }
+        .diag-status { font-size: 1.15rem; font-weight: 800; }
+        .diag-row { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; font-size: 0.82rem; color: #374151; }
+        .diag-row span:last-child { font-weight: 700; color: var(--primary); }
+        .prob-bar-wrap { background: #e2e8f0; border-radius: 999px; height: 10px; margin: 6px 0; overflow: hidden; }
+        .prob-bar { height: 100%; border-radius: 999px; transition: width 0.6s; }
+        .factor-item { font-size: 0.78rem; color: #475569; padding: 3px 0; display: flex; align-items: flex-start; gap: 6px; }
+        .factor-item::before { content: "▸"; color: var(--primary); flex-shrink: 0; }
+        .div-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; font-size: 0.82rem; border-bottom: 1px dashed #f1f5f9; }
+        .volume-relation-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+        .volume-relation-title { font-size: 0.82rem; font-weight: 800; color: #1e3c72; margin-bottom: 6px; }
+        .volume-relation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .volume-metric { font-size: 0.78rem; color: #64748b; }
+        .volume-metric strong { display: block; color: #1e293b; font-size: 0.88rem; margin-top: 1px; }
+        .volume-detail-list { margin: 8px 0 0; padding-left: 16px; font-size: 0.8rem; color: #475569; line-height: 1.6; }
+        .summary-box { background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border-radius: 10px; padding: 14px; font-size: 0.85rem; color: #1e293b; line-height: 1.75; border-left: 4px solid var(--primary); }
+        .summary-verdict { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+        .no-data { color: #94a3b8; font-size: 0.8rem; font-style: italic; }
+
+        /* Scanner tab */
+        .scan-controls { background: #fff; border-radius: var(--border-r); padding: 16px 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .scan-result-card { background: #fff; border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }
+        .scan-result-card:hover { box-shadow: 0 4px 16px rgba(30,60,114,0.12); border-left-color: var(--primary); transform: translateX(3px); }
+        .scan-score { font-size: 1.5rem; font-weight: 900; color: var(--primary); min-width: 46px; text-align: center; }
+        .scan-symbol { font-size: 1.1rem; font-weight: 800; color: #1e293b; }
+        .scan-price { font-size: 0.9rem; color: #64748b; }
+        .scan-diag { font-size: 0.78rem; color: #475569; margin-top: 2px; }
+        .score-ring { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; font-size: 1.1rem; font-weight: 900; }
+
+        /* Loading overlay */
+        #loadingOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 9999; align-items: center; justify-content: center; }
+        #loadingOverlay.active { display: flex; }
+        .loading-box { background: #fff; border-radius: 16px; padding: 32px 40px; text-align: center; min-width: 280px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+        .loading-box .spinner-border { width: 3rem; height: 3rem; }
+        #loadingMsg { font-size: 0.9rem; color: #64748b; margin-top: 14px; }
+        .loading-prog { background: #e2e8f0; border-radius: 999px; height: 6px; margin-top: 10px; overflow: hidden; }
+        .loading-prog-bar { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2563eb, #7c3aed); transition: width 0.5s; }
+
+        /* Back button */
+        .back-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border: 1px solid rgba(255,255,255,0.45); border-radius: 8px; color: #fff; text-decoration: none; font-size: 14px; font-weight: 600; background: rgba(255,255,255,0.15); backdrop-filter: blur(4px); transition: all 0.2s; }
+        .back-btn:hover { background: rgba(255,255,255,0.28); color: #fff; }
+
+        /* Theme toggle */
+        .theme-toggle { position: fixed; top: 14px; right: 16px; z-index: 1050; background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 50%; width: 38px; height: 38px; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+
+        /* Responsive adjustments */
+        @media (max-width: 991px) {
+            .analyst-panel { max-height: none; }
+        }
+    </style>
+</head>
+<body>
+
+<button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="切換暗黑模式">🌙</button>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay">
+    <div class="loading-box">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p id="loadingMsg">正在載入 K 線資料...</p>
+        <div class="loading-prog"><div id="loadingProgBar" class="loading-prog-bar" style="width:5%"></div></div>
+    </div>
+</div>
+
+<!-- Hero Banner -->
+<div class="hero">
+    <div class="container-fluid px-4">
+        <div style="position:absolute;top:18px;left:18px;">
+            <a href="index.html" class="back-btn">← 返回主頁</a>
+        </div>
+        <div class="text-center">
+            <h1><i class="bi bi-bar-chart-steps me-2"></i>K 線掃描分析系統</h1>
+            <p class="lead">K 線型態辨識 · 技術指標訊號 · AI 預測 · 分析師解說</p>
+            <div class="search-row">
+                <input type="text" id="symbolInput" class="form-control form-control-sm rounded-pill text-center fw-bold"
+                       placeholder="股票代碼 (如 2330)" value="2330" style="max-width:160px;font-size:1rem;">
+                <button class="btn btn-warning fw-bold px-4 rounded-pill" onclick="analyzeStock()">
+                    <i class="bi bi-search me-1"></i>開始分析
+                </button>
+                <button class="btn btn-outline-light fw-bold px-3 rounded-pill" onclick="quickScan()">
+                    <i class="bi bi-lightning-fill me-1"></i>市場掃描
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tab-nav">
+    <ul class="nav" id="mainTabs">
+        <li class="nav-item">
+            <a class="nav-link active" href="#" onclick="switchTab('analysis',this)">
+                <i class="bi bi-graph-up me-1"></i>個股分析
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="#" onclick="switchTab('scanner',this)">
+                <i class="bi bi-radar me-1"></i>市場掃描排行
+            </a>
+        </li>
+    </ul>
+</div>
+
+<!-- Tab: 個股分析 -->
+<div id="tab-analysis" class="tab-content-pane">
+    <div class="container-fluid px-3 py-3">
+        <!-- Stock title row -->
+        <div id="stockTitleRow" style="display:none;" class="d-flex align-items-center gap-3 mb-2 px-1">
+            <div>
+                <span id="stockNameDisplay" class="fw-bold fs-4 text-dark"></span>
+                <span id="stockSymbolDisplay" class="ms-2 text-muted fs-6"></span>
+            </div>
+            <div id="stockPriceBadge" class="ms-auto fw-bold fs-5 text-primary"></div>
+        </div>
+
+        <div class="row g-2">
+            <!-- Left: Charts Column -->
+            <div class="col-lg-7">
+                <!-- K-line main chart -->
+                <div class="chart-card">
+                    <div class="chart-title">📊 K線圖（含均線 MA5/MA20/MA60 & 布林通道）</div>
+                    <div style="position:relative;height:320px;">
+                        <canvas id="klineChart"></canvas>
+                    </div>
+                </div>
+                <!-- Volume -->
+                <div class="chart-card">
+                    <div class="chart-title">📦 成交量</div>
+                    <div style="position:relative;height:100px;">
+                        <canvas id="volumeChart"></canvas>
+                    </div>
+                </div>
+                <!-- MACD -->
+                <div class="chart-card">
+                    <div class="chart-title">⚡ MACD（12/26/9）</div>
+                    <div style="position:relative;height:120px;">
+                        <canvas id="macdChart"></canvas>
+                    </div>
+                </div>
+                <!-- KD -->
+                <div class="chart-card">
+                    <div class="chart-title">🎯 KD 隨機指標（9/3/3）</div>
+                    <div style="position:relative;height:120px;">
+                        <canvas id="kdChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Analyst Panel -->
+            <div class="col-lg-5">
+                <div class="analyst-panel" id="analystPanel">
+                    <!-- Default empty state -->
+                    <div id="analystEmpty" class="text-center py-5 text-muted">
+                        <i class="bi bi-bar-chart-line" style="font-size:3rem;opacity:0.25;"></i>
+                        <p class="mt-3 small">請輸入股票代碼並點擊「開始分析」</p>
+                    </div>
+
+                    <!-- Analyst content (hidden until data loaded) -->
+                    <div id="analystContent" style="display:none;">
+
+                        <!-- K線型態 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-candle text-warning"></i> K 線型態偵測</div>
+                            <div id="patternBadges"></div>
+                            <p id="patternText" class="analyst-text"></p>
+                        </div>
+
+                        <!-- 綜合診斷 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-stethoscope text-danger"></i> 綜合技術診斷</div>
+                            <div class="text-center mb-2">
+                                <span id="diagStatus" class="diag-status"></span>
+                                <span id="diagRisk" class="ms-2 badge bg-secondary fs-6"></span>
+                            </div>
+                            <div class="diag-row"><span>當前價格</span><span id="diagPrice">--</span></div>
+                            <div class="diag-row"><span>MA5</span><span id="diagMa5">--</span></div>
+                            <div class="diag-row"><span>MA20</span><span id="diagMa20">--</span></div>
+                            <div class="diag-row"><span>RSI(14)</span><span id="diagRsi">--</span></div>
+                            <div id="diagRsiStatus" class="analyst-text mt-1"></div>
+                            <p id="diagSuggestion" class="analyst-text mt-2 fw-semibold" style="color:#1e3c72;"></p>
+                        </div>
+
+                        <!-- 價量關係 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-boxes text-info"></i> 價量關係詳細說明</div>
+                            <div class="volume-relation-card">
+                                <div id="volumeRelationTitle" class="volume-relation-title">--</div>
+                                <div class="volume-relation-grid">
+                                    <div class="volume-metric">近一日漲跌<strong id="volumePriceChange">--</strong></div>
+                                    <div class="volume-metric">量能水位<strong id="volumeLevel">--</strong></div>
+                                    <div class="volume-metric">5 日量比<strong id="volumeRatio5">--</strong></div>
+                                    <div class="volume-metric">20 日量比<strong id="volumeRatio20">--</strong></div>
+                                </div>
+                                <ul id="volumeRelationDetails" class="volume-detail-list"></ul>
+                            </div>
+                        </div>
+
+                        <!-- AI 預測 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-robot text-primary"></i> AI 預測評分</div>
+                            <div class="d-flex align-items-center gap-3 mb-2">
+                                <div class="text-center">
+                                    <div id="aiProb" class="fw-bold" style="font-size:2rem;color:var(--primary);">--%</div>
+                                    <div style="font-size:0.7rem;color:#94a3b8;">上漲機率</div>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <div class="prob-bar-wrap">
+                                        <div id="aiProbBar" class="prob-bar" style="width:0%;background:#2563eb;"></div>
+                                    </div>
+                                    <div id="aiRec" class="fw-bold mt-1" style="font-size:0.88rem;color:#1e3c72;"></div>
+                                    <div class="mt-1" style="font-size:0.75rem;color:#94a3b8;">
+                                        信心度: <span id="aiConf">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="aiFactors"></div>
+                        </div>
+
+                        <!-- 背離偵測 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-arrow-left-right text-success"></i> 背離訊號偵測</div>
+                            <div id="divRsi" class="div-row">
+                                <span class="fw-semibold">RSI 背離</span>
+                                <span id="divRsiBadge" class="badge bg-secondary">--</span>
+                            </div>
+                            <div id="divMacd" class="div-row" style="border-bottom:none;">
+                                <span class="fw-semibold">MACD 背離</span>
+                                <span id="divMacdBadge" class="badge bg-secondary">--</span>
+                            </div>
+                            <p id="divText" class="analyst-text mt-2"></p>
+                        </div>
+
+                        <!-- 分析師總結 -->
+                        <div class="analyst-section">
+                            <div class="sec-title"><i class="bi bi-lightbulb-fill text-warning"></i> 分析師總結建議</div>
+                            <div id="summaryBox" class="summary-box">
+                                <div id="summaryVerdict" class="summary-verdict"></div>
+                                <div id="summaryText"></div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab: 市場掃描 -->
+<div id="tab-scanner" class="tab-content-pane" style="display:none;">
+    <div class="container-fluid px-3 py-3">
+        <div class="scan-controls">
+            <label class="fw-semibold text-muted small me-1">掃描數量</label>
+            <select id="scanTop" class="form-select form-select-sm" style="width:90px;">
+                <option value="10">Top 10</option>
+                <option value="20" selected>Top 20</option>
+                <option value="50">Top 50</option>
+            </select>
+            <label class="fw-semibold text-muted small me-1">類型</label>
+            <select id="scanType" class="form-select form-select-sm" style="width:110px;">
+                <option value="">全部</option>
+                <option value="STOCK">個股</option>
+                <option value="ETF">ETF</option>
+            </select>
+            <button class="btn btn-primary btn-sm rounded-pill px-4 fw-bold" onclick="runScan()">
+                <i class="bi bi-lightning-fill me-1"></i>開始掃描
+            </button>
+            <span id="scanStatus" class="small text-muted ms-2"></span>
+        </div>
+
+        <!-- Scan results -->
+        <div id="scanResults"></div>
+    </div>
+</div>
+
+<script>
+const API = '/api/stocks';
+let _charts = {};
+let _progTimer = null;
+let _progStep = 0;
+
+// ── 工具函式 ──────────────────────────────────────────────────────────────
+
+function showLoading(msg) {
+    document.getElementById('loadingOverlay').classList.add('active');
+    document.getElementById('loadingMsg').innerText = msg || '載入中...';
+    document.getElementById('loadingProgBar').style.width = '5%';
+    _progStep = 0;
+    _progTimer = setInterval(() => {
+        _progStep = Math.min(_progStep + 1, 8);
+        const pct = [5, 12, 22, 35, 50, 64, 76, 87, 94][_progStep];
+        document.getElementById('loadingProgBar').style.width = pct + '%';
+        const msgs = ['正在載入 K 線資料...','計算均線與布林通道...','載入 MACD 指標...','載入 KD 指標...','執行 K 線型態辨識...','呼叫 AI 預測模型...','偵測指標背離訊號...','整合分析師報告...','即將完成...'];
+        document.getElementById('loadingMsg').innerText = msgs[_progStep] || '載入中...';
+    }, 3000);
+}
+
+function hideLoading() {
+    clearInterval(_progTimer);
+    document.getElementById('loadingProgBar').style.width = '100%';
+    setTimeout(() => document.getElementById('loadingOverlay').classList.remove('active'), 300);
+}
+
+function switchTab(name, el) {
+    document.querySelectorAll('.tab-content-pane').forEach(t => t.style.display = 'none');
+    document.querySelectorAll('.tab-nav .nav-link').forEach(a => a.classList.remove('active'));
+    document.getElementById('tab-' + name).style.display = 'block';
+    el.classList.add('active');
+    return false;
+}
+
+function destroyChart(id) {
+    if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+}
+
+// ── K 線型態辨識 ───────────────────────────────────────────────────────────
+
+function detectPatterns(candles) {
+    const patterns = [];
+    const n = candles.length;
+    if (n < 3) return patterns;
+
+    function bodySize(c) { return Math.abs(c.c - c.o); }
+    function range(c) { return c.h - c.l; }
+    function upperWick(c) { return c.h - Math.max(c.o, c.c); }
+    function lowerWick(c) { return Math.min(c.o, c.c) - c.l; }
+    function isBullish(c) { return c.c > c.o; }
+    function isBearish(c) { return c.c < c.o; }
+
+    const last = candles[n - 1];
+    const prev = candles[n - 2];
+    const prev2 = candles[n - 3];
+
+    // 十字星 Doji
+    const r = range(last);
+    if (r > 0 && bodySize(last) / r < 0.1) {
+        patterns.push({ name: '十字星', type: 'neutral', desc: '開收盤幾乎相同，市場多空拉鋸，趨勢可能即將轉變。需觀察下一根 K 線方向確認訊號。' });
+    }
+    // 鎚子線 Hammer（下跌後的底部訊號）
+    else if (r > 0 && lowerWick(last) >= 2 * bodySize(last) && upperWick(last) <= 0.3 * bodySize(last) + 0.01 && bodySize(last) / r > 0.05 && isBearish(prev)) {
+        patterns.push({ name: '鎚子線', type: 'bull', desc: '長下影線顯示下跌過程中有強力買盤介入，將股價拉回，為反轉向上的多頭訊號，建議關注次日確認K棒。' });
+    }
+    // 倒鎚子 Inverted Hammer
+    else if (r > 0 && upperWick(last) >= 2 * bodySize(last) && lowerWick(last) <= 0.3 * bodySize(last) + 0.01 && bodySize(last) / r > 0.05 && isBearish(prev)) {
+        patterns.push({ name: '倒鎚子', type: 'bull', desc: '下跌後出現長上影線，顯示買方試圖推高但未成功，搭配次日多頭確認後可視為底部反轉訊號。' });
+    }
+    // 流星線 Shooting Star（上漲後的頂部訊號）
+    else if (r > 0 && upperWick(last) >= 2 * bodySize(last) && lowerWick(last) <= 0.3 * bodySize(last) + 0.01 && bodySize(last) / r > 0.05 && isBullish(prev)) {
+        patterns.push({ name: '流星線', type: 'bear', desc: '上漲趨勢末端出現長上影線，意味高位有大量賣壓介入，為看空的頂部反轉訊號，建議設好停利或減碼。' });
+    }
+    // 多頭吞噬 Bullish Engulfing
+    if (isBearish(prev) && isBullish(last) && last.o <= prev.c && last.c >= prev.o) {
+        patterns.push({ name: '多頭吞噬', type: 'bull', desc: '今日多頭K棒完全包覆前日空頭K棒，顯示買方強力反攻，為短期底部可能已成的有力訊號。' });
+    }
+    // 空頭吞噬 Bearish Engulfing
+    if (isBullish(prev) && isBearish(last) && last.o >= prev.c && last.c <= prev.o) {
+        patterns.push({ name: '空頭吞噬', type: 'bear', desc: '今日空頭K棒完全包覆前日多頭K棒，顯示賣方強力接管，為短期頂部可能已形成的警示訊號。' });
+    }
+    // 多頭孕線 Bullish Harami
+    if (isBearish(prev) && isBullish(last) && last.o > prev.c && last.c < prev.o) {
+        patterns.push({ name: '多頭孕線', type: 'bull', desc: '小多頭K棒藏在前日大空頭K棒之內，顯示空頭力道衰竭，有機會形成底部，建議等待進一步確認。' });
+    }
+    // 空頭孕線 Bearish Harami
+    if (isBullish(prev) && isBearish(last) && last.o < prev.c && last.c > prev.o) {
+        patterns.push({ name: '空頭孕線', type: 'bear', desc: '小空頭K棒藏在前日大多頭K棒之內，顯示多頭力道減弱，趨勢可能逐漸轉空。' });
+    }
+    // 晨星 Morning Star（3根）
+    if (isBearish(prev2) && bodySize(prev) / (range(prev) + 0.01) < 0.3 && isBullish(last) && last.c > (prev2.o + prev2.c) / 2) {
+        patterns.push({ name: '晨星', type: 'bull', desc: '三日型態：大空頭 + 小實體（不確定）+ 大多頭，為最強底部反轉訊號之一，多方力道明確。' });
+    }
+    // 黃昏星 Evening Star（3根）
+    if (isBullish(prev2) && bodySize(prev) / (range(prev) + 0.01) < 0.3 && isBearish(last) && last.c < (prev2.o + prev2.c) / 2) {
+        patterns.push({ name: '黃昏星', type: 'bear', desc: '三日型態：大多頭 + 小實體（不確定）+ 大空頭，為最強頂部反轉訊號之一，空方主導明確。' });
+    }
+    // 三白兵 Three White Soldiers
+    if (n >= 3 && isBullish(last) && isBullish(prev) && isBullish(prev2) && last.c > prev.c && prev.c > prev2.c) {
+        patterns.push({ name: '三白兵', type: 'bull', desc: '連續三根陽線且收盤價遞增，顯示多方持續發力，為上漲趨勢強度的有力確認，通常是進場加碼的積極訊號。' });
+    }
+    // 三黑鴉 Three Black Crows
+    if (n >= 3 && isBearish(last) && isBearish(prev) && isBearish(prev2) && last.c < prev.c && prev.c < prev2.c) {
+        patterns.push({ name: '三黑鴉', type: 'bear', desc: '連續三根陰線且收盤價遞減，為空頭強烈延伸的警示訊號，顯示賣壓沉重，應考慮降低持股比例。' });
+    }
+
+    if (patterns.length === 0) {
+        patterns.push({ name: '無明顯型態', type: 'neutral', desc: '近期K線未形成特定訊號型態，市場方向需搭配其他技術指標（如 MACD、KD、RSI）綜合判斷。' });
+    }
+    return patterns;
+}
+
+// ── 計算移動平均 ──────────────────────────────────────────────────────────
+
+function calcMA(data, period) {
+    return data.map((_, i) => {
+        if (i < period - 1) return null;
+        const slice = data.slice(i - period + 1, i + 1);
+        return slice.reduce((a, b) => a + b, 0) / period;
+    });
+}
+
+function hasCandlestickController() {
+    return !!(window.Chart && (
+        Chart.registry?.controllers?.items?.candlestick ||
+        Chart.registry?.getController?.('candlestick')
+    ));
+}
+
+function toTimeValue(dateText) {
+    const value = Date.parse(dateText);
+    return Number.isFinite(value) ? value : dateText;
+}
+
+// ── 繪製圖表 ──────────────────────────────────────────────────────────────
+
+function drawKlineChart(history, bollinger) {
+    destroyChart('kline');
+    const hasFinancial = hasCandlestickController();
+    const closes = history.map(d => d.c || d.price);
+    const ma5  = calcMA(closes, 5);
+    const ma20 = calcMA(closes, 20);
+    const ma60 = calcMA(closes, 60);
+
+    const candleData = history.map(d => ({
+        x: toTimeValue(d.t || d.date), o: d.o || d.price, h: d.h || d.price,
+        l: d.l || d.price,  c: d.c || d.price
+    }));
+    const closeLineData = history.map((d, i) => ({
+        x: toTimeValue(d.t || d.date),
+        y: closes[i]
+    }));
+    const toLineData = values => values.map((value, i) => ({
+        x: toTimeValue(history[i].t || history[i].date),
+        y: value
+    }));
+
+    const datasets = [{
+        type: hasFinancial ? 'candlestick' : 'line',
+        label: hasFinancial ? 'K線' : '收盤價',
+        data: hasFinancial ? candleData : closeLineData,
+        parsing: false,
+        color: { up: '#e74c3c', down: '#2ecc71', unchanged: '#999' },
+        borderColor: hasFinancial ? { up: '#e74c3c', down: '#2ecc71', unchanged: '#999' } : '#1e3c72',
+        borderWidth: hasFinancial ? undefined : 1.6,
+        pointRadius: 0,
+        tension: hasFinancial ? undefined : 0.15,
+        order: 1
+    }, {
+        type: 'line', label: 'MA5',  data: toLineData(ma5), parsing: false, borderColor: '#f59e0b', borderWidth: 1.2, pointRadius: 0, tension: 0.15, spanGaps: true, order: 0
+    }, {
+        type: 'line', label: 'MA20', data: toLineData(ma20), parsing: false, borderColor: '#3b82f6', borderWidth: 1.2, pointRadius: 0, tension: 0.15, spanGaps: true, order: 0
+    }, {
+        type: 'line', label: 'MA60', data: toLineData(ma60), parsing: false, borderColor: '#a855f7', borderWidth: 1.2, pointRadius: 0, tension: 0.15, spanGaps: true, order: 0
+    }];
+
+    // Bollinger Bands
+    if (bollinger && bollinger.bands) {
+        const upper = history.map(() => bollinger.bands.upper ?? null);
+        const lower = history.map(() => bollinger.bands.lower ?? null);
+        datasets.push({ type: 'line', label: 'BB上軌', data: toLineData(upper), parsing: false, borderColor: '#94a3b8', borderWidth: 1, borderDash: [3,2], pointRadius: 0, fill: false, spanGaps: true, order: 0 });
+        datasets.push({ type: 'line', label: 'BB下軌', data: toLineData(lower), parsing: false, borderColor: '#94a3b8', borderWidth: 1, borderDash: [3,2], pointRadius: 0, fill: '-1', backgroundColor: 'rgba(148,163,184,0.06)', spanGaps: true, order: 0 });
+    }
+
+    const minX = candleData[0]?.x;
+    const maxX = candleData[candleData.length - 1]?.x;
+    const ctx = document.getElementById('klineChart').getContext('2d');
+    _charts.kline = new Chart(ctx, {
+        data: { datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, font: { size: 10 }, boxWidth: 12 } },
+                tooltip: { callbacks: { label: ctx => {
+                    if (ctx.dataset.type === 'candlestick') {
+                        const d = ctx.raw;
+                        return `O:${d.o} H:${d.h} L:${d.l} C:${d.c}`;
+                    }
+                    return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? '--'}`;
+                }}}
+            },
+            scales: {
+                x: { type: 'timeseries', min: minX, max: maxX, time: { unit: 'day' }, ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+                y: { position: 'right', ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    });
+}
+
+function drawVolumeChart(history) {
+    destroyChart('volume');
+    const labels = history.map(d => d.t);
+    const vols = history.map(d => d.volume || 0);
+    const colors = history.map(d => (d.c || d.price) >= (d.o || d.price) ? 'rgba(231,76,60,0.65)' : 'rgba(46,204,113,0.65)');
+    const ctx = document.getElementById('volumeChart').getContext('2d');
+    _charts.volume = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '成交量', data: vols, backgroundColor: colors, borderWidth: 0 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '量: ' + (c.raw / 1000).toFixed(0) + 'K' } } },
+            scales: {
+                x: { ticks: { display: false }, grid: { display: false } },
+                y: { position: 'right', ticks: { font: { size: 9 }, maxTicksLimit: 3, callback: v => (v/1000).toFixed(0)+'K' }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    });
+}
+
+function drawMacdChart(macdData) {
+    destroyChart('macd');
+    if (!macdData || !macdData.length) return;
+    const labels = macdData.map(d => d.date || d.t || '');
+    const macd   = macdData.map(d => d.macd   ?? d.macdLine   ?? 0);
+    const signal = macdData.map(d => d.signal  ?? d.signalLine ?? 0);
+    const hist   = macdData.map(d => d.histogram ?? d.hist ?? 0);
+    const histColors = hist.map(v => v >= 0 ? 'rgba(231,76,60,0.7)' : 'rgba(46,204,113,0.7)');
+    const ctx = document.getElementById('macdChart').getContext('2d');
+    _charts.macd = new Chart(ctx, {
+        data: {
+            labels,
+            datasets: [
+                { type: 'bar',  label: 'Histogram', data: hist,   backgroundColor: histColors, borderWidth: 0, order: 1 },
+                { type: 'line', label: 'MACD',      data: macd,   borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, tension: 0.3, order: 0 },
+                { type: 'line', label: 'Signal',    data: signal, borderColor: '#f97316', borderWidth: 1.5, pointRadius: 0, tension: 0.3, order: 0 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { font: { size: 10 }, boxWidth: 10 } } },
+            scales: {
+                x: { ticks: { display: false }, grid: { display: false } },
+                y: { position: 'right', ticks: { font: { size: 9 }, maxTicksLimit: 4 }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    });
+}
+
+function drawKdChart(kdInfo) {
+    destroyChart('kd');
+    const series = kdInfo?.kdSeries || [];
+    if (!series.length) return;
+    const labels = series.map(d => d.date || '');
+    const kLine  = series.map(d => d.k ?? null);
+    const dLine  = series.map(d => d.d ?? null);
+    const ctx = document.getElementById('kdChart').getContext('2d');
+    _charts.kd = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: 'K', data: kLine, borderColor: '#f59e0b', borderWidth: 1.8, pointRadius: 0, tension: 0.3, spanGaps: true },
+                { label: 'D', data: dLine, borderColor: '#6366f1', borderWidth: 1.8, pointRadius: 0, tension: 0.3, spanGaps: true }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 10 }, boxWidth: 10 } },
+                annotation: {}
+            },
+            scales: {
+                x: { ticks: { display: false }, grid: { display: false } },
+                y: { position: 'right', min: 0, max: 100, ticks: { font: { size: 9 }, stepSize: 25 }, grid: { color: 'rgba(0,0,0,0.04)' } }
+            }
+        }
+    });
+}
+
+// ── 更新分析師面板 ────────────────────────────────────────────────────────
+
+function updatePatternPanel(patterns) {
+    const container = document.getElementById('patternBadges');
+    container.innerHTML = '';
+    patterns.forEach(p => {
+        const span = document.createElement('span');
+        span.className = `pattern-badge ${p.type === 'bull' ? 'badge-bull' : p.type === 'bear' ? 'badge-bear' : 'badge-neutral'}`;
+        span.textContent = (p.type === 'bull' ? '▲ ' : p.type === 'bear' ? '▼ ' : '○ ') + p.name;
+        container.appendChild(span);
+    });
+    // 最優先的型態說明
+    const primary = patterns[patterns.length - 1];
+    document.getElementById('patternText').textContent = primary ? primary.desc : '';
+}
+
+function updateDiagPanel(diag) {
+    if (!diag) return;
+    const statusEl = document.getElementById('diagStatus');
+    statusEl.textContent = diag.status || '--';
+    statusEl.style.color = diag.color || '#333';
+    const riskMap = { '高': 'bg-danger', '中高': 'bg-warning', '中': 'bg-info', '低': 'bg-success' };
+    const riskEl = document.getElementById('diagRisk');
+    riskEl.textContent = `風險: ${diag.riskLevel || '--'}`;
+    riskEl.className = `ms-2 badge fs-6 ${riskMap[diag.riskLevel] || 'bg-secondary'}`;
+    document.getElementById('diagPrice').textContent = diag.price ? `NT$ ${diag.price}` : '--';
+    document.getElementById('diagMa5').textContent  = diag.ma5  ? `${diag.ma5}`  : '--';
+    document.getElementById('diagMa20').textContent = diag.ma20 ? `${diag.ma20}` : '--';
+    document.getElementById('diagRsi').textContent  = diag.rsi  ? `${diag.rsi}`  : '--';
+    document.getElementById('diagRsiStatus').textContent  = diag.rsiStatus || '';
+    document.getElementById('diagSuggestion').textContent = diag.suggestion || '';
+}
+
+function updateVolumeRelationPanel(history) {
+    const titleEl = document.getElementById('volumeRelationTitle');
+    const changeEl = document.getElementById('volumePriceChange');
+    const levelEl = document.getElementById('volumeLevel');
+    const ratio5El = document.getElementById('volumeRatio5');
+    const ratio20El = document.getElementById('volumeRatio20');
+    const detailsEl = document.getElementById('volumeRelationDetails');
+    if (!titleEl || !detailsEl) return;
+
+    const rows = (history || []).filter(d => (d.c || d.price) > 0 && (d.volume || 0) > 0);
+    if (rows.length < 2) {
+        titleEl.textContent = '價量資料不足';
+        changeEl.textContent = '--';
+        levelEl.textContent = '--';
+        ratio5El.textContent = '--';
+        ratio20El.textContent = '--';
+        detailsEl.innerHTML = '<li>目前有效 OHLCV 資料不足，無法形成可靠的價量判讀。</li>';
+        return;
+    }
+
+    const latest = rows[rows.length - 1];
+    const prev = rows[rows.length - 2];
+    const close = latest.c || latest.price;
+    const prevClose = prev.c || prev.price;
+    const latestVolume = latest.volume || 0;
+    const priceChangePct = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
+    const avg = values => values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    const avg5 = avg(rows.slice(-5).map(d => d.volume || 0));
+    const avg20 = avg(rows.slice(-20).map(d => d.volume || 0));
+    const ratio5 = avg5 > 0 ? latestVolume / avg5 : 0;
+    const ratio20 = avg20 > 0 ? latestVolume / avg20 : 0;
+    const recent = rows.slice(-10);
+    const upVolumeDays = recent.filter((d, i) => i > 0 && (d.c || d.price) > (recent[i - 1].c || recent[i - 1].price) && (d.volume || 0) >= avg5 * 0.8).length;
+    const downVolumeDays = recent.filter((d, i) => i > 0 && (d.c || d.price) < (recent[i - 1].c || recent[i - 1].price) && (d.volume || 0) >= avg5 * 0.8).length;
+    const closePosition = latest.h > latest.l ? (close - latest.l) / (latest.h - latest.l) : 0.5;
+
+    let title;
+    let level;
+    const details = [];
+
+    if (priceChangePct >= 1 && ratio5 >= 1.25) {
+        title = '價漲量增，買盤主動性偏強';
+        details.push('股價上漲且成交量明顯高於 5 日均量，代表追價買盤有進場，不是單純無量反彈。');
+    } else if (priceChangePct >= 0.3 && ratio5 < 0.8) {
+        title = '價漲量縮，短線偏向反彈或惜售';
+        details.push('股價上漲但量能低於短期均量，代表賣壓不重，但買盤推升力道仍需下一根放量確認。');
+    } else if (priceChangePct <= -1 && ratio5 >= 1.25) {
+        title = '價跌量增，賣壓需要優先控管';
+        details.push('股價下跌且量能放大，代表換手壓力或停損賣盤增加，短線不宜急著接刀。');
+    } else if (priceChangePct <= -0.3 && ratio5 < 0.8) {
+        title = '價跌量縮，偏向整理回測';
+        details.push('股價回落但量能收斂，通常表示殺低意願有限，需觀察是否守住前低或均線支撐。');
+    } else if (ratio5 >= 1.5 && Math.abs(priceChangePct) < 0.3) {
+        title = '放量不漲，留意高檔換手或壓力';
+        details.push('量能放大但價格變動有限，代表買賣雙方在此價位大量換手，若在高檔更要留意壓力。');
+    } else {
+        title = '價量中性，等待方向表態';
+        details.push('價格與量能沒有明顯同步訊號，目前較像整理盤，需等待突破或跌破後再提高判斷權重。');
+    }
+
+    if (ratio5 >= 1.8) level = '爆量';
+    else if (ratio5 >= 1.25) level = '放量';
+    else if (ratio5 <= 0.65) level = '量縮';
+    else level = '正常';
+
+    if (closePosition >= 0.75) {
+        details.push('收盤位置接近日內高點，表示尾盤承接力較好，短線買盤仍願意墊高價格。');
+    } else if (closePosition <= 0.25) {
+        details.push('收盤位置接近日內低點，表示尾盤賣壓偏重，隔日需先看是否止穩。');
+    } else {
+        details.push('收盤位於日內區間中段，多空仍在拉鋸，單日 K 線確認度普通。');
+    }
+
+    if (upVolumeDays > downVolumeDays + 1) {
+        details.push(`近 10 日放量上漲日較多（${upVolumeDays} 天），籌碼偏向被買盤承接。`);
+    } else if (downVolumeDays > upVolumeDays + 1) {
+        details.push(`近 10 日放量下跌日較多（${downVolumeDays} 天），籌碼偏向賣壓釋放。`);
+    } else {
+        details.push('近 10 日放量漲跌天數接近，籌碼仍在換手，趨勢延續性需要更多確認。');
+    }
+
+    if (ratio20 >= 1.3) {
+        details.push('相對 20 日均量也偏高，這不是單日偶發量，市場關注度正在升溫。');
+    } else if (ratio20 <= 0.7) {
+        details.push('相對 20 日均量偏低，代表整體參與度下降，突破訊號可靠度會打折。');
+    }
+
+    titleEl.textContent = title;
+    changeEl.textContent = `${priceChangePct >= 0 ? '+' : ''}${priceChangePct.toFixed(2)}%`;
+    changeEl.style.color = priceChangePct >= 0 ? '#b91c1c' : '#15803d';
+    levelEl.textContent = `${level}（${latestVolume.toLocaleString()} 股）`;
+    ratio5El.textContent = `${ratio5.toFixed(2)}x`;
+    ratio20El.textContent = `${ratio20.toFixed(2)}x`;
+    detailsEl.innerHTML = details.map(text => `<li>${text}</li>`).join('');
+}
+
+function updateAiPanel(pred) {
+    if (!pred) return;
+    const pct = Math.round(pred.probability ?? 0);
+    document.getElementById('aiProb').textContent = pct + '%';
+    document.getElementById('aiProbBar').style.width = pct + '%';
+    document.getElementById('aiProbBar').style.background = pct >= 60 ? '#16a34a' : pct >= 45 ? '#2563eb' : '#dc2626';
+    document.getElementById('aiRec').textContent = pred.recommendation || '--';
+    document.getElementById('aiConf').textContent = pred.confidence ? Math.round(pred.confidence * 100) + '%' : '--';
+    const factorsEl = document.getElementById('aiFactors');
+    factorsEl.innerHTML = '';
+    (pred.factors || []).forEach(f => {
+        const div = document.createElement('div');
+        div.className = 'factor-item';
+        div.textContent = f;
+        factorsEl.appendChild(div);
+    });
+}
+
+function updateDivPanel(div) {
+    if (!div) return;
+    const rsiBadgeEl  = document.getElementById('divRsiBadge');
+    const macdBadgeEl = document.getElementById('divMacdBadge');
+    const rsi  = div.rsiDivergence;
+    const macd = div.macdDivergence;
+
+    function renderBadge(el, d) {
+        if (!d) { el.textContent = '--'; el.className = 'badge bg-secondary'; return; }
+        const isNone = d.divergenceType === '無';
+        const isBull = d.divergenceType?.includes('底');
+        el.textContent = d.divergenceType + (d.confirmed ? ' ✅' : '');
+        el.className = isNone ? 'badge bg-secondary' : isBull ? 'badge bg-success' : 'badge bg-danger';
+    }
+    renderBadge(rsiBadgeEl, rsi);
+    renderBadge(macdBadgeEl, macd);
+
+    const texts = [];
+    if (rsi && rsi.divergenceType !== '無') texts.push(`RSI ${rsi.divergenceType}（強度 ${Math.round((rsi.strength||0)*100)}%）：${rsi.description || ''}`);
+    if (macd && macd.divergenceType !== '無') texts.push(`MACD ${macd.divergenceType}（強度 ${Math.round((macd.strength||0)*100)}%）：${macd.description || ''}`);
+    document.getElementById('divText').textContent = texts.join(' ／ ') || '目前無明顯背離訊號，趨勢與指標走勢一致。';
+}
+
+function buildSummary(patterns, diag, pred, divData) {
+    let signals = 0;
+    let bearSignals = 0;
+    const bullets = [];
+
+    // Pattern score
+    patterns.forEach(p => {
+        if (p.type === 'bull') signals += 2;
+        else if (p.type === 'bear') bearSignals += 2;
+    });
+
+    // Diagnosis
+    const status = diag?.status || '';
+    if (status.includes('多頭')) signals += 2;
+    else if (status.includes('空頭')) bearSignals += 2;
+    if (diag?.rsi < 30) { signals += 1; bullets.push('RSI 超賣區，反彈機率增加'); }
+    if (diag?.rsi > 70) { bearSignals += 1; bullets.push('RSI 超買區，注意獲利了結'); }
+
+    // AI prediction
+    const prob = pred?.probability ?? 50;
+    if (prob >= 60) { signals += 2; bullets.push(`AI 預測上漲機率 ${Math.round(prob)}%`); }
+    else if (prob < 40) { bearSignals += 2; bullets.push(`AI 預測上漲機率偏低（${Math.round(prob)}%）`); }
+
+    // Divergence
+    const rsiDiv  = divData?.rsiDivergence?.divergenceType  || '無';
+    const macdDiv = divData?.macdDivergence?.divergenceType || '無';
+    if (rsiDiv.includes('底') || macdDiv.includes('底'))  { signals += 2; bullets.push('偵測到底背離訊號，趨勢可能反轉向上'); }
+    if (rsiDiv.includes('頂') || macdDiv.includes('頂')) { bearSignals += 2; bullets.push('偵測到頂背離訊號，趨勢可能轉弱'); }
+
+    let verdict, text, verdictColor;
+    const net = signals - bearSignals;
+    if (net >= 4) {
+        verdict = '📈 強烈多頭訊號'; verdictColor = '#15803d';
+        text = `多個技術面指標同時發出買進訊號：${bullets.join('；')}。綜合評估目前為積極進場的有利時機，建議可考慮分批布局，並設置約 5~8% 的停損空間以控制風險。`;
+    } else if (net >= 2) {
+        verdict = '🟢 偏多，可留意進場機會'; verdictColor = '#2563eb';
+        text = `技術面偏多，${bullets.length ? bullets.join('；') + '。' : ''}建議可小量試單，待突破確認後再加碼。`;
+    } else if (net <= -4) {
+        verdict = '📉 強烈空頭訊號'; verdictColor = '#b91c1c';
+        text = `多個指標同時指向賣壓沉重：${bullets.join('；')}。建議降低持股部位，避免追高，等待技術面好轉後再行評估。`;
+    } else if (net <= -2) {
+        verdict = '🔴 偏空，觀望為主'; verdictColor = '#d97706';
+        text = `技術面偏空，${bullets.length ? bullets.join('；') + '。' : ''}建議暫緩進場，耐心等待轉折訊號出現。`;
+    } else {
+        verdict = '⚖️ 多空均衡，中性觀望'; verdictColor = '#64748b';
+        text = '目前技術面多空訊號相當，市場處於盤整觀望階段。建議等待明確突破或指標轉強，再行決策。不宜衝動進場。';
+    }
+
+    document.getElementById('summaryVerdict').textContent = verdict;
+    document.getElementById('summaryVerdict').style.color = verdictColor;
+    document.getElementById('summaryText').textContent = text;
+}
+
+// ── 分析師面板載入狀態 ────────────────────────────────────────────────────
+
+function setAnalystPanelLoading(loading) {
+    const ids = ['diagStatus','diagRisk','diagPrice','diagMa5','diagMa20','diagRsi','diagRsiStatus','diagSuggestion',
+                 'volumeRelationTitle','volumePriceChange','volumeLevel','volumeRatio5','volumeRatio20','volumeRelationDetails',
+                 'aiProb','aiRec','aiConf','aiFactors','divRsiBadge','divMacdBadge','divText','summaryVerdict','summaryText'];
+    if (loading) {
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (id === 'diagRisk') { el.className = 'ms-2 badge bg-secondary'; el.textContent = '分析中...'; }
+            else if (['aiProbBar'].includes(id)) {}
+            else el.textContent = '⏳ 分析中...';
+        });
+        document.getElementById('aiProbBar').style.width = '0%';
+        document.getElementById('summaryVerdict').style.color = '#64748b';
+    }
+}
+
+// ── 安全 JSON fetch（避免後端回傳 HTML 造成解析錯誤）────────────────────
+
+function getApiFallbackUrl(url) {
+    if (!url.startsWith('/')) return null;
+    const apiPort = localStorage.getItem('api-port') || '19090';
+    const fallbackUrl = `http://localhost:${apiPort}${url}`;
+    return window.location.origin === `http://localhost:${apiPort}`
+        || window.location.origin === `http://127.0.0.1:${apiPort}`
+        ? null
+        : fallbackUrl;
+}
+
+async function fetchWithApiFallback(url, init) {
+    let primaryError = null;
+    try {
+        const response = await fetch(url, init);
+        if (response.status !== 404) {
+            return response;
+        }
+        primaryError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+        primaryError = error;
+    }
+
+    const fallbackUrl = getApiFallbackUrl(url);
+    if (!fallbackUrl) {
+        throw primaryError;
+    }
+    return fetch(fallbackUrl, init);
+}
+
+async function safeJson(url) {
+    const resp = await fetchWithApiFallback(url);
+    if (!resp.ok) {
+        const body = await resp.text();
+        const msg = body.trim().startsWith('<')
+            ? `API 端點不存在或後端版本尚未更新 (HTTP ${resp.status})`
+            : body.slice(0, 160);
+        throw new Error(msg);
+    }
+    return resp.json();
+}
+
+async function safeJsonRequest(url, init) {
+    const resp = await fetchWithApiFallback(url, init);
+    if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(body.trim().startsWith('<')
+            ? `API 端點不存在或後端版本尚未更新 (HTTP ${resp.status})`
+            : body.slice(0, 160));
+    }
+    return resp.json();
+}
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ── 主分析函式（兩階段載入：先圖表，再分析面板）────────────────────────────
+
+async function analyzeStock() {
+    const raw = document.getElementById('symbolInput').value.trim();
+    if (!raw) return;
+    const symbol = raw.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+
+    showLoading('正在載入 K 線資料...');
+    document.getElementById('analystEmpty').style.display = 'none';
+    document.getElementById('analystContent').style.display = 'none';
+    document.getElementById('stockTitleRow').style.display = 'none';
+
+    try {
+        // ── 第一階段：圖表資料（快速，約 1-3 秒）────────────────────────
+        const [nameRes, histRes, bollRes, macdRes, kdRes] = await Promise.allSettled([
+            safeJson(`${API}/${symbol}/name`),
+            safeJson(`${API}/${symbol}/history?limit=120`),
+            safeJson(`${API}/${symbol}/bollinger?limit=120`),
+            safeJson(`${API}/${symbol}/macd?limit=60`),
+            safeJson(`${API}/${symbol}/kd?limit=120`),
+        ]);
+
+        const name     = nameRes.status === 'fulfilled' ? nameRes.value : {};
+        const history  = histRes.status === 'fulfilled' ? histRes.value : [];
+        const bollinger= bollRes.status === 'fulfilled' ? bollRes.value : null;
+        const macdData = macdRes.status === 'fulfilled' ? macdRes.value : [];
+        const kdInfo   = kdRes.status === 'fulfilled'   ? kdRes.value   : {};
+
+        if (!history || history.length === 0) {
+            hideLoading();
+            const reason = histRes.status === 'rejected'
+                ? `API 錯誤：${histRes.reason?.message || histRes.reason}`
+                : '資料庫中尚無該股歷史資料，請先至主頁執行「市場掃描」或等待系統補抓。';
+            alert(`找不到 ${symbol} 的K線資料。\n\n${reason}`);
+            return;
+        }
+
+        // 股票標題
+        const stockName = name.name || symbol;
+        const latestPrice = history[history.length - 1]?.c || history[history.length - 1]?.price;
+        document.getElementById('stockNameDisplay').textContent = stockName;
+        document.getElementById('stockSymbolDisplay').textContent = `(${symbol})`;
+        document.getElementById('stockPriceBadge').textContent = latestPrice ? `NT$ ${latestPrice}` : '';
+        document.getElementById('stockTitleRow').style.display = 'flex';
+
+        // 第一階段完成：繪製圖表 + K線型態（立即顯示）
+        drawKlineChart(history, bollinger);
+        drawVolumeChart(history);
+        drawMacdChart(macdData);
+        drawKdChart(kdInfo);
+
+        const patterns = detectPatterns(history);
+        updatePatternPanel(patterns);
+
+        // 先顯示面板（分析師區塊顯示「載入中」狀態）
+        document.getElementById('analystContent').style.display = 'block';
+        setAnalystPanelLoading(true);
+        updateVolumeRelationPanel(history);
+        hideLoading();
+
+        // ── 第二階段：深度分析（慢，背景載入，30-60 秒）──────────────────
+        const [diagRes, predRes, divRes] = await Promise.allSettled([
+            safeJson(`${API}/${symbol}/diagnosis`),
+            safeJson(`${API}/${symbol}/prediction`),
+            safeJson(`${API}/${symbol}/divergence`),
+        ]);
+
+        const diag    = diagRes.status === 'fulfilled' ? diagRes.value : null;
+        const pred    = predRes.status === 'fulfilled' ? predRes.value : null;
+        const divData = divRes.status === 'fulfilled'  ? divRes.value  : null;
+
+        setAnalystPanelLoading(false);
+        updateDiagPanel(diag);
+        updateAiPanel(pred);
+        updateDivPanel(divData);
+        buildSummary(patterns, diag, pred, divData);
+
+    } catch (err) {
+        console.error(err);
+        hideLoading();
+        setAnalystPanelLoading(false);
+        alert('分析失敗，請稍後再試：' + err.message);
+    }
+}
+
+// ── 市場掃描 ──────────────────────────────────────────────────────────────
+
+function quickScan() {
+    switchTab('scanner', document.querySelectorAll('.tab-nav .nav-link')[1]);
+    runScan();
+}
+
+async function runScan() {
+    const top  = document.getElementById('scanTop').value;
+    const type = document.getElementById('scanType').value;
+    const statusEl = document.getElementById('scanStatus');
+    const resultsEl = document.getElementById('scanResults');
+
+    statusEl.textContent = '準備掃描...';
+    resultsEl.innerHTML = `
+        <div class="loading-box mx-auto my-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p id="scanProgressMessage" class="mt-3 mb-2 text-muted">正在建立掃描股票池...</p>
+            <div class="loading-prog"><div id="scanProgressBar" class="loading-prog-bar" style="width:0%"></div></div>
+            <div id="scanProgressCount" class="small text-muted mt-2">0 / 0</div>
+        </div>`;
+
+    try {
+        const params = new URLSearchParams({ top });
+        if (type) params.set('assetType', type);
+        const started = await safeJsonRequest(`${API}/scan/tasks?${params.toString()}`, { method: 'POST' });
+        let snapshot;
+        const deadline = Date.now() + 300000;
+        while (Date.now() < deadline) {
+            snapshot = await safeJson(`${API}/scan/tasks/${encodeURIComponent(started.taskId)}`);
+            const progressBar = document.getElementById('scanProgressBar');
+            const progressMessage = document.getElementById('scanProgressMessage');
+            const progressCount = document.getElementById('scanProgressCount');
+            if (progressBar) progressBar.style.width = `${snapshot.progressPct || 0}%`;
+            if (progressMessage) progressMessage.textContent = snapshot.message || '掃描中...';
+            if (progressCount) progressCount.textContent = `${snapshot.completed || 0} / ${snapshot.total || 0}（${snapshot.progressPct || 0}%）`;
+            statusEl.textContent = snapshot.status === 'QUEUED'
+                ? '排隊中...'
+                : `掃描進度 ${snapshot.progressPct || 0}%`;
+            if (snapshot.status === 'COMPLETED') break;
+            if (snapshot.status === 'FAILED') throw new Error(snapshot.message || '掃描失敗');
+            await wait(700);
+        }
+        if (!snapshot || snapshot.status !== 'COMPLETED') {
+            throw new Error('掃描等待逾時，背景工作可能仍在執行');
+        }
+        const data = snapshot.results || [];
+
+        if (!data || !data.length) {
+            resultsEl.innerHTML = '<p class="text-muted text-center py-4">無掃描結果，請確認資料庫已有足夠資料。</p>';
+            statusEl.textContent = '';
+            return;
+        }
+
+        statusEl.textContent = `共 ${data.length} 筆結果`;
+        resultsEl.innerHTML = '';
+
+        data.forEach((item, idx) => {
+            const scoreColor = item.score >= 70 ? '#15803d' : item.score >= 50 ? '#2563eb' : '#94a3b8';
+            const scoreBg    = item.score >= 70 ? '#dcfce7' : item.score >= 50 ? '#dbeafe' : '#f1f5f9';
+            const card = document.createElement('div');
+            card.className = 'scan-result-card';
+            card.innerHTML = `
+                <div class="score-ring" style="background:${scoreBg};color:${scoreColor};">${item.score}</div>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="scan-symbol">${item.symbol}</span>
+                        <span class="badge ${item.assetType === 'ETF' ? 'bg-info' : 'bg-secondary'} fs-7">${item.assetType || 'STOCK'}</span>
+                        ${item.market ? `<span class="badge bg-light text-muted fs-7">${item.market}</span>` : ''}
+                    </div>
+                    <div class="scan-price">NT$ ${item.currentPrice?.toFixed(2) || '--'}
+                        <span class="ms-2 text-muted">RSI: ${item.rsi?.toFixed(1) || '--'}</span>
+                        ${item.volumeChurnRisk ? '<span class="ms-2 badge bg-warning text-dark">⚠️ 量能異常</span>' : ''}
+                    </div>
+                    <div class="scan-diag">${item.diagnosis || ''}</div>
+                    <div class="mt-1" style="font-size:0.72rem;color:#7c3aed;">${item.strategyMode || ''} — ${item.strategyDescription || ''}</div>
+                </div>
+                <div class="text-end">
+                    <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="loadFromScan('${item.symbol}')">
+                        <i class="bi bi-graph-up me-1"></i>分析
+                    </button>
+                </div>
+            `;
+            resultsEl.appendChild(card);
+        });
+
+    } catch (err) {
+        resultsEl.innerHTML = `<p class="text-danger text-center py-4">掃描失敗：${err.message}</p>`;
+        statusEl.textContent = '';
+    }
+}
+
+function loadFromScan(symbol) {
+    document.getElementById('symbolInput').value = symbol;
+    switchTab('analysis', document.querySelectorAll('.tab-nav .nav-link')[0]);
+    analyzeStock();
+}
+
+// ── Enter 鍵 ──────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('symbolInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') analyzeStock();
+    });
+    // Auto-load from URL param
+    const sym = new URLSearchParams(window.location.search).get('symbol');
+    if (sym) {
+        document.getElementById('symbolInput').value = sym;
+        analyzeStock();
+    }
+});
+</script>
+
+<!-- Dark mode theme script -->
+<script>
+(function(){
+    var k = 'stockpredictor-theme';
+    function g() { var s = localStorage.getItem(k); if (s) return s; return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'; }
+    function a(t) { document.documentElement.setAttribute('data-theme', t); var b = document.getElementById('themeToggle'); if (b) b.textContent = t === 'dark' ? '☀️' : '🌙'; }
+    window.toggleTheme = function() { var c = document.documentElement.getAttribute('data-theme') || 'light'; var n = c === 'dark' ? 'light' : 'dark'; localStorage.setItem(k, n); a(n); };
+    a(g());
+})();
+</script>
+
+</body>
+</html>
