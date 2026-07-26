@@ -96,10 +96,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS IDX_FINANCIAL_QUARTER_SYMBOL_DATE
 
 ### 快取讀寫流程
 
-1. **先查快取**：`DatabaseManager.getFinancialQuarterHistory(symbol, quarters)`
+1. **先查快取**：`financialDataRepository.getFinancialQuarterHistory(symbol, quarters)`
 2. **快取不足時調用 API**：`finMindClient.fetchFinancialStatements()` 與 `fetchBalanceSheet()`
 3. **三率直接欄位識別**：篩選 type 為 GrossProfitMargin / OperatingProfitMargin / NetProfitMargin 的記錄
-4. **寫入快取**：`DatabaseManager.saveFinancialQuarterData(symbol, data)`
+4. **寫入快取**：`financialDataRepository.saveFinancialQuarterData(symbol, data)`
 
 ## 📊 三率直接欄位識別邏輯
 
@@ -197,7 +197,7 @@ curl "https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialState
 - **DTO 映射**: `FinMindRawFinancialRow.java`（已存在，相同結構）
 - **客戶端**: `FinMindClient.java`
 - **業務邏輯**: `AdvancedFundamentalService.java`
-- **快取層**: `DatabaseManager.java`
+- **快取層**: `FinancialDataRepository.java`
 - **資料模型**: `FinancialQuarterData.java`
 - **結果模型**: `RadarScoreResult.java`
 - **前端整合**: `index.html`（AI 診斷報告區塊）
@@ -208,7 +208,7 @@ curl "https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialState
 - [x] 驗證 FinMind API 返回格式相符
 - [x] 三率直接欄位識別邏輯已在 `AdvancedFundamentalService` 中實現
 - [x] DB 快取表已建立（FINANCIAL_QUARTER_DATA）
-- [x] 快取讀寫方法已實現（DatabaseManager）
+- [x] 快取讀寫方法已實現（`FinancialDataRepository`）
 - [x] 編譯通過
 - [ ] 實機測試 (需 FinMind token)
 - [ ] 前端展示驗證

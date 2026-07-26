@@ -1,6 +1,6 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,14 +31,19 @@ public class StrategyController {
     /** 財報查詢起始日期（涵蓋前季 Q4 與本季 Q1） */
     private static final String FINANCIAL_QUERY_START_DATE = "2025-10-01";
 
-    @Autowired
-    private MarketService marketService;
+    private final MarketService marketService;
 
-    @Autowired
-    private FinMindClient finMindClient;
+    private final FinMindClient finMindClient;
 
-    @Autowired
-    private AdvancedFundamentalService advancedFundamentalService;
+    private final AdvancedFundamentalService advancedFundamentalService;
+
+    public StrategyController(MarketService marketService,
+                              FinMindClient finMindClient,
+                              AdvancedFundamentalService advancedFundamentalService) {
+        this.marketService = marketService;
+        this.finMindClient = finMindClient;
+        this.advancedFundamentalService = advancedFundamentalService;
+    }
 
     // ════════════════════════════════════════════════════════════
     //  一級 API：全市場黑馬股掃描
@@ -77,74 +82,69 @@ public class StrategyController {
         logger.info("🚀 啟動全市場 Q1 黑馬股掃描任務...");
         long startTime = System.currentTimeMillis();
 
-        try {
-            // 1️⃣ 取得全市場股票代碼清單
-            List<String> allSymbols = marketService.getAllSymbols();
-            if (allSymbols == null || allSymbols.isEmpty()) {
-                logger.warning("❌ 無法取得市場股票清單");
-                return ResponseEntity.ok(buildErrorResponse("無法取得市場股票清單"));
-            }
+        // 1️⃣ 取得全市場股票代碼清單
+        List<String> allSymbols = marketService.getAllSymbols();
+        if (allSymbols == null || allSymbols.isEmpty()) {
+            logger.warning("❌ 無法取得市場股票清單");
+            throw new ApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "MARKET_DATA_UNAVAILABLE",
+                    "目前無法取得市場股票清單，請稍後再試。");
+        }
 
-            logger.info("📊 取得全市場股票清單: 共 " + allSymbols.size() + " 檔");
+        logger.info("📊 取得全市場股票清單: 共 " + allSymbols.size() + " 檔");
 
-            // 2️⃣ 掃描並收集黑馬股
-            List<String> blackHorseList = new ArrayList<>();
-            AtomicInteger processedCount = new AtomicInteger(0);
-            AtomicInteger errorCount = new AtomicInteger(0);
+        // 2️⃣ 掃描並收集黑馬股
+        List<String> blackHorseList = new ArrayList<>();
+        AtomicInteger processedCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
 
-            for (String symbol : allSymbols) {
-                try {
-                    // API 限流
-                    Thread.sleep(API_RATE_LIMIT_MS);
+        for (String symbol : allSymbols) {
+            try {
+                // API 限流
+                Thread.sleep(API_RATE_LIMIT_MS);
 
-                    // 從 FinMind 抓取財報資料（原始 Row 格式）
-                    List<FinMindRawFinancialRow> rawRows =
+                // 從 FinMind 抓取財報資料（原始 Row 格式）
+                List<FinMindRawFinancialRow> rawRows =
                         finMindClient.fetchFinancialStatements(symbol, FINANCIAL_QUERY_START_DATE);
 
-                    // 轉換為 FinMindFinancialData 格式
-                    List<FinMindFinancialData> financials = convertToFinancialData(rawRows);
+                // 轉換為 FinMindFinancialData 格式
+                List<FinMindFinancialData> financials = convertToFinancialData(rawRows);
 
-                    // 調用三率三升判定引擎
-                    int score = advancedFundamentalService.checkTripleRiseScore(financials);
+                // 調用三率三升判定引擎
+                int score = advancedFundamentalService.checkTripleRiseScore(financials);
 
-                    if (score > 0) {
-                        blackHorseList.add(symbol);
-                        logger.info("✅ [" + processedCount.incrementAndGet() + "/" + allSymbols.size() + "] "
-                                + symbol + " 符合三率三升 (得分: " + score + ")");
-                    } else {
-                        processedCount.incrementAndGet();
-                    }
-
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    logger.warning("⚠️  掃描被中斷: " + ie.getMessage());
-                    break;
-                } catch (Exception e) {
-                    errorCount.incrementAndGet();
-                    logger.warning("⚠️  掃描 " + symbol + " 失敗: " + e.getMessage());
+                if (score > 0) {
+                    blackHorseList.add(symbol);
                     processedCount.incrementAndGet();
-                    // 繼續掃描下一檔
+                    logger.info("✅ [" + processedCount.get() + "/" + allSymbols.size() + "] "
+                            + symbol + " 符合三率三升 (得分: " + score + ")");
+                } else {
+                    processedCount.incrementAndGet();
                 }
+
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                logger.warning("⚠️  掃描被中斷: " + ie.getMessage());
+                break;
+            } catch (Exception e) {
+                errorCount.incrementAndGet();
+                logger.warning("⚠️  掃描 " + symbol + " 失敗: " + e.getMessage());
+                processedCount.incrementAndGet();
+                // 繼續掃描下一檔
             }
-
-            long endTime = System.currentTimeMillis();
-            long durationMs = endTime - startTime;
-
-            // 3️⃣ 構建成功響應
-            return ResponseEntity.ok(buildSuccessResponse(
-                    allSymbols.size(),
-                    blackHorseList.size(),
-                    errorCount.get(),
-                    durationMs,
-                    blackHorseList
-            ));
-
-        } catch (Exception e) {
-            logger.severe("❌ 掃描任務異常終止: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.status(500)
-                    .body(buildErrorResponse("掃描任務失敗: " + e.getMessage()));
         }
+
+        long durationMs = System.currentTimeMillis() - startTime;
+
+        // 3️⃣ 構建成功響應
+        return ResponseEntity.ok(buildSuccessResponse(
+                allSymbols.size(),
+                blackHorseList.size(),
+                errorCount.get(),
+                durationMs,
+                blackHorseList
+        ));
     }
 
     // ════════════════════════════════════════════════════════════
@@ -169,63 +169,55 @@ public class StrategyController {
         logger.info("🚀 啟動自訂符號掃描任務: " + symbols);
         long startTime = System.currentTimeMillis();
 
-        try {
-            // 解析符號列表
-            List<String> symbolList = Arrays.stream(symbols.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .collect(Collectors.toList());
+        // 解析符號列表
+        List<String> symbolList = Arrays.stream(symbols.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
 
-            if (symbolList.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(buildErrorResponse("符號列表為空"));
-            }
-
-            logger.info("📊 開始掃描 " + symbolList.size() + " 檔股票");
-
-            // 掃描邏輯（與全市場相同）
-            List<String> blackHorseList = new ArrayList<>();
-            int errorCount = 0;
-
-            for (String symbol : symbolList) {
-                try {
-                    Thread.sleep(API_RATE_LIMIT_MS);
-
-                    // 從 FinMind 抓取財報資料（原始 Row 格式）
-                    List<FinMindRawFinancialRow> rawRows =
-                            finMindClient.fetchFinancialStatements(symbol, FINANCIAL_QUERY_START_DATE);
-
-                    // 轉換為 FinMindFinancialData 格式
-                    List<FinMindFinancialData> financials = convertToFinancialData(rawRows);
-
-                    int score = advancedFundamentalService.checkTripleRiseScore(financials);
-
-                    if (score > 0) {
-                        blackHorseList.add(symbol);
-                        logger.info("✅ " + symbol + " 符合三率三升 (得分: " + score + ")");
-                    }
-
-                } catch (Exception e) {
-                    errorCount++;
-                    logger.warning("⚠️  掃描 " + symbol + " 失敗: " + e.getMessage());
-                }
-            }
-
-            long durationMs = System.currentTimeMillis() - startTime;
-
-            return ResponseEntity.ok(buildSuccessResponse(
-                    symbolList.size(),
-                    blackHorseList.size(),
-                    errorCount,
-                    durationMs,
-                    blackHorseList
-            ));
-
-        } catch (Exception e) {
-            logger.severe("❌ 自訂掃描失敗: " + e.getMessage());
-            return ResponseEntity.status(500)
-                    .body(buildErrorResponse("掃描失敗: " + e.getMessage()));
+        if (symbolList.isEmpty()) {
+            throw new IllegalArgumentException("symbols 至少需要一個股票代號。");
         }
+
+        logger.info("📊 開始掃描 " + symbolList.size() + " 檔股票");
+
+        // 掃描邏輯（與全市場相同）
+        List<String> blackHorseList = new ArrayList<>();
+        int errorCount = 0;
+
+        for (String symbol : symbolList) {
+            try {
+                Thread.sleep(API_RATE_LIMIT_MS);
+
+                // 從 FinMind 抓取財報資料（原始 Row 格式）
+                List<FinMindRawFinancialRow> rawRows =
+                        finMindClient.fetchFinancialStatements(symbol, FINANCIAL_QUERY_START_DATE);
+
+                // 轉換為 FinMindFinancialData 格式
+                List<FinMindFinancialData> financials = convertToFinancialData(rawRows);
+
+                int score = advancedFundamentalService.checkTripleRiseScore(financials);
+
+                if (score > 0) {
+                    blackHorseList.add(symbol);
+                    logger.info("✅ " + symbol + " 符合三率三升 (得分: " + score + ")");
+                }
+
+            } catch (Exception e) {
+                errorCount++;
+                logger.warning("⚠️  掃描 " + symbol + " 失敗: " + e.getMessage());
+            }
+        }
+
+        long durationMs = System.currentTimeMillis() - startTime;
+
+        return ResponseEntity.ok(buildSuccessResponse(
+                symbolList.size(),
+                blackHorseList.size(),
+                errorCount,
+                durationMs,
+                blackHorseList
+        ));
     }
 
     // ════════════════════════════════════════════════════════════
@@ -259,17 +251,6 @@ public class StrategyController {
                 "✅ 掃描統計: 總計 %d, 成功 %d, 失敗 %d, 黑馬 %d, 耗時 %.1fs",
                 totalScanned, totalScanned - errorCount, errorCount, tripleRoseFound, durationMs / 1000.0));
 
-        return response;
-    }
-
-    /**
-     * 構建錯誤響應 DTO。
-     */
-    private Map<String, Object> buildErrorResponse(String message) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", "error");
-        response.put("message", message);
-        response.put("timestamp", System.currentTimeMillis());
         return response;
     }
 

@@ -1,192 +1,173 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.junit4.SpringRunner;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * 容錯降級機制測試
- * 用於驗證 TWSE 失敗時自動切換到 FinMind 的功能
- */
-@RunWith(SpringRunner.class)
-@SpringBootTest
-@Ignore("外部資料源整合測試：會連線 TWSE/FinMind，預設測試流程不執行，避免 CI/本機測試不穩定。")
-public class InstitutionalServiceFallbackTest {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-    @Autowired
+class InstitutionalServiceFallbackTest {
+    private TwseService twseService;
+    private FinMindClient finMindClient;
+    private InstitutionalDataRepository institutionalDataRepository;
+    private StockUniverseRepository stockUniverseRepository;
     private InstitutionalService institutionalService;
 
-    /**
-     * 測試1：取得每日籌碼資料（自動容錯）
-     */
-    @Test
-    public void testGetDailyChipDataWithFallback() {
-        System.out.println("========================================");
-        System.out.println("測試1: 取得每日籌碼資料（自動容錯）");
-        System.out.println("========================================");
-
-        String symbol = "2330";
-        String date = LocalDate.now().toString();
-
-        List<InstitutionalTrade> result = institutionalService
-            .getDailyChipDataWithFallback(symbol, date);
-
-        System.out.println("\n📊 結果摘要:");
-        System.out.println("  股票代號: " + symbol);
-        System.out.println("  日期: " + date);
-        System.out.println("  返回筆數: " + result.size());
-
-        if (!result.isEmpty()) {
-            InstitutionalTrade trade = result.get(0);
-            System.out.println("\n  ✅ 數據詳情:");
-            System.out.println("    - 日期: " + trade.getDate());
-            System.out.println("    - 投信買超: " + trade.getTrustBuy());
-            System.out.println("    - 外資買超: " + trade.getForeignBuy());
-            System.out.println("    - 自營商買超: " + trade.getDealerBuy());
-            System.out.println("    - 日成交量: " + trade.getDailyVolume());
-            System.out.println("    - 三大法人合計買超: " + trade.getTotalNetBuy());
-        } else {
-            System.out.println("\n  ⚠️  無法取得數據（可能是市場休市或兩個源都失敗）");
-        }
-        System.out.println();
+    @BeforeEach
+    void setUp() {
+        twseService = mock(TwseService.class);
+        finMindClient = mock(FinMindClient.class);
+        institutionalDataRepository = mock(InstitutionalDataRepository.class);
+        stockUniverseRepository = mock(StockUniverseRepository.class);
+        institutionalService = new InstitutionalService(
+                twseService,
+                finMindClient,
+                institutionalDataRepository,
+                stockUniverseRepository);
     }
 
-    /**
-     * 測試2：取得最近N天的籌碼資料（自動容錯）
-     */
     @Test
-    public void testGetRecentInstitutionalTrades() {
-        System.out.println("========================================");
-        System.out.println("測試2: 取得最近30天籌碼資料（自動容錯）");
-        System.out.println("========================================");
+    void shouldUseTwseResultWithoutCallingFallback() {
+        InstitutionalTrade twseTrade =
+                new InstitutionalTrade("2026-07-22", 100, 200, 300, 1_000);
+        when(twseService.fetchInstitutionalDataByDate("2330", LocalDate.of(2026, 7, 22)))
+                .thenReturn(twseTrade);
 
-        String symbol = "2330";
-        int days = 30;
+        List<InstitutionalTrade> result =
+                institutionalService.getDailyChipDataWithFallback("2330", "2026-07-22");
 
-        List<InstitutionalTrade> result = institutionalService
-            .getRecentInstitutionalTrades(symbol, days);
-
-        System.out.println("\n📊 結果摘要:");
-        System.out.println("  股票代號: " + symbol);
-        System.out.println("  查詢天數: " + days);
-        System.out.println("  返回筆數: " + result.size());
-
-        if (!result.isEmpty()) {
-            System.out.println("\n  ✅ 前5筆數據:");
-            for (int i = 0; i < Math.min(result.size(), 5); i++) {
-                InstitutionalTrade trade = result.get(i);
-                System.out.printf("    %d. %s: 投信買超=%,d, 外資買超=%,d, 自營商買超=%,d\n",
-                    i + 1,
-                    trade.getDate(),
-                    trade.getTrustBuy(),
-                    trade.getForeignBuy(),
-                    trade.getDealerBuy()
-                );
-            }
-        }
-        System.out.println();
+        assertEquals(List.of(twseTrade), result);
+        verify(finMindClient, never()).fetchChipDataBackup(anyString(), anyString());
     }
 
-    /**
-     * 測試3：計算投信鎖碼評分（使用容錯降級方法）
-     */
     @Test
-    public void testCalculateTrustLockScore() {
-        System.out.println("========================================");
-        System.out.println("測試3: 計算投信鎖碼評分");
-        System.out.println("========================================");
+    void shouldFallbackToFinMindWhenTwseHasNoData() {
+        when(twseService.fetchInstitutionalDataByDate("2330", LocalDate.of(2026, 7, 22)))
+                .thenReturn(null);
+        when(finMindClient.fetchChipDataBackup("2330", "2026-07-22"))
+                .thenReturn(List.of(chip("2026-07-22", 700, 200)));
 
-        String symbol = "2330";
+        List<InstitutionalTrade> result =
+                institutionalService.getDailyChipDataWithFallback("2330", "2026-07-22");
 
-        int score = institutionalService.calculateTrustLockScore(symbol);
-        double ratio = institutionalService.getLockRatio(symbol);
-        int continuousDays = institutionalService.getContinuousBuyDays(symbol);
-
-        System.out.println("\n📊 評分結果:");
-        System.out.println("  股票代號: " + symbol);
-        System.out.println("  投信鎖碼評分: " + score + "/100");
-        System.out.println("  投信籌碼佔比: " + String.format("%.2f%%", ratio));
-        System.out.println("  連續買超天數: " + continuousDays + " 天");
-
-        if (score >= 70) {
-            System.out.println("  評級: 🟢 強勢信號");
-        } else if (score >= 40) {
-            System.out.println("  評級: 🟡 中性信號");
-        } else {
-            System.out.println("  評級: 🔴 弱勢信號");
-        }
-        System.out.println();
+        assertEquals(1, result.size());
+        assertEquals("2026-07-22", result.get(0).getDate());
+        assertEquals(0, result.get(0).getForeignBuy());
+        assertEquals(700, result.get(0).getTrustBuy());
+        assertEquals(0, result.get(0).getDealerBuy());
+        assertEquals(900, result.get(0).getDailyVolume());
     }
 
-    /**
-     * 測試4：模擬 TWSE 失敗場景
-     * （需要手動測試：臨時關閉網路或修改 TWSE URL 使其失敗）
-     */
     @Test
-    public void testTWSEFailoverScenario() {
-        System.out.println("========================================");
-        System.out.println("測試4: TWSE 失敗容錯測試");
-        System.out.println("========================================");
+    void shouldReturnEmptyListWhenBothSourcesFail() {
+        when(twseService.fetchInstitutionalDataByDate("2330", LocalDate.of(2026, 7, 22)))
+                .thenThrow(new IllegalStateException("TWSE unavailable"));
+        when(finMindClient.fetchChipDataBackup("2330", "2026-07-22"))
+                .thenThrow(new IllegalStateException("FinMind unavailable"));
 
-        System.out.println("\n⚠️  此測試需要手動設置 TWSE 為不可達");
-        System.out.println("可通過以下方式模擬:");
-        System.out.println("  1. 暫時斷開網路連線");
-        System.out.println("  2. 修改 TWSE URL 為無效地址");
-        System.out.println("  3. 查看日誌輸出，驗證是否自動切換到 FinMind");
+        List<InstitutionalTrade> result =
+                institutionalService.getDailyChipDataWithFallback("2330", "2026-07-22");
 
-        String symbol = "2330";
-        String date = LocalDate.now().toString();
-
-        System.out.println("\n正在執行容錯測試...");
-        List<InstitutionalTrade> result = institutionalService
-            .getDailyChipDataWithFallback(symbol, date);
-
-        System.out.println("\n結果: " + (result.isEmpty() ? "❌ 無數據" : "✅ 成功取得 " + result.size() + " 筆數據"));
-        System.out.println("✅ 如果看到上方日誌中有 '[方案B]' 的內容，表示容錯機制已成功激活");
-        System.out.println();
+        assertTrue(result.isEmpty());
     }
 
-    /**
-     * 測試5：多個股票的批量查詢（容錯能力測試）
-     */
     @Test
-    public void testBatchQueryWithFallback() {
-        System.out.println("========================================");
-        System.out.println("測試5: 批量查詢多個股票（容錯能力）");
-        System.out.println("========================================");
+    void shouldSkipTwseWhenForceFinMindIsEnabled() {
+        institutionalService.setForceFinMind(true);
+        when(finMindClient.fetchChipDataBackup("2330", "2026-07-22"))
+                .thenReturn(List.of(chip("2026-07-22", 500, 100)));
 
-        String[] symbols = {"2330", "2454", "3402", "2412", "2888"};
-        String date = LocalDate.now().toString();
+        List<InstitutionalTrade> result =
+                institutionalService.getDailyChipDataWithFallback("2330", "2026-07-22");
 
-        System.out.println("\n正在批量查詢 " + symbols.length + " 個股票...\n");
+        assertEquals(1, result.size());
+        assertEquals(500, result.get(0).getTrustBuy());
+        verify(twseService, never()).fetchInstitutionalDataByDate(
+                anyString(),
+                org.mockito.ArgumentMatchers.any(LocalDate.class));
+    }
 
-        int successCount = 0;
-        for (String symbol : symbols) {
-            List<InstitutionalTrade> result = institutionalService
-                .getDailyChipDataWithFallback(symbol, date);
+    @Test
+    void shouldPersistAndReturnRecentFinMindFallbackData() {
+        InstitutionalTrade converted =
+                new InstitutionalTrade("2026-07-22", 0, 800, 0, 1_000);
+        when(twseService.fetchRecentInstitutionalData("2330", 10))
+                .thenThrow(new IllegalStateException("TWSE unavailable"));
+        when(finMindClient.fetchChipDataByDateRange(
+                org.mockito.ArgumentMatchers.eq("2330"),
+                anyString(),
+                anyString()))
+                .thenReturn(List.of(chip("2026-07-22", 800, 200)));
 
-            boolean success = !result.isEmpty();
-            successCount += success ? 1 : 0;
+        when(institutionalDataRepository.getRecentInstitutionalTrades("2330", 10))
+                .thenReturn(List.of(), List.of(converted));
 
-            String status = success ? "✅" : "⚠️ ";
-            String details = success ?
-                String.format("投信買超=%,d", result.get(0).getTrustBuy()) :
-                "無數據";
+        List<InstitutionalTrade> result =
+                institutionalService.getRecentInstitutionalTrades("2330", 10);
 
-            System.out.printf("%s %s: %s\n", status, symbol, details);
-        }
+        assertEquals(List.of(converted), result);
+        verify(institutionalDataRepository).saveInstitutionalTrades(
+                eq("2330"),
+                org.mockito.ArgumentMatchers.<List<InstitutionalTrade>>argThat(trades ->
+                        trades.size() == 1
+                                && trades.get(0).getTrustBuy() == 800
+                                && trades.get(0).getDailyVolume() == 1_000));
+    }
 
-        System.out.println("\n📊 統計:");
-        System.out.println("  查詢股票數: " + symbols.length);
-        System.out.println("  成功取得數: " + successCount);
-        System.out.println("  成功率: " + String.format("%.1f%%", successCount * 100.0 / symbols.length));
-        System.out.println();
+    @Test
+    void shouldReadLargeHolderHistoryFromRepositoryWithoutFetching() {
+        List<FinMindShareholdingData> cached = List.of(
+                shareholding("2026-07-01"),
+                shareholding("2026-07-08"),
+                shareholding("2026-07-15"),
+                shareholding("2026-07-22"));
+        when(institutionalDataRepository.getLargeHolderShareholdingHistory("2330", 8))
+                .thenReturn(cached);
+
+        List<FinMindShareholdingData> result =
+                institutionalService.getLargeHolderShareholdingHistory("2330", 8);
+
+        assertEquals(cached, result);
+        verify(finMindClient, never()).fetchLargeHolderShareholding(anyString(), anyString());
+    }
+
+    @Test
+    void shouldRefreshLargeHolderDataForRepositorySymbols() {
+        when(stockUniverseRepository.getAllSymbols()).thenReturn(List.of("2330", " ", "2454"));
+        List<FinMindShareholdingData> rows = List.of(shareholding("2026-07-22"));
+        when(finMindClient.fetchLargeHolderShareholding(eq("2330"), anyString())).thenReturn(rows);
+        when(finMindClient.fetchLargeHolderShareholding(eq("2454"), anyString())).thenReturn(rows);
+        when(institutionalDataRepository.saveLargeHolderShareholding("2330", rows)).thenReturn(1);
+        when(institutionalDataRepository.saveLargeHolderShareholding("2454", rows)).thenReturn(1);
+
+        int savedRows = institutionalService.refreshWeeklyLargeHolderShareholding();
+
+        assertEquals(2, savedRows);
+        verify(institutionalDataRepository).saveLargeHolderShareholding("2330", rows);
+        verify(institutionalDataRepository).saveLargeHolderShareholding("2454", rows);
+    }
+
+    private FinMindChipData chip(String date, long buy, long sell) {
+        FinMindChipData data = new FinMindChipData();
+        data.setDate(date);
+        data.setBuy(buy);
+        data.setSell(sell);
+        return data;
+    }
+
+    private FinMindShareholdingData shareholding(String date) {
+        FinMindShareholdingData data = new FinMindShareholdingData();
+        data.setDate(date);
+        data.setHoldingFactor(15);
+        return data;
     }
 }
-

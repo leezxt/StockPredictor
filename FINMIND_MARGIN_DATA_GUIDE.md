@@ -433,17 +433,20 @@ public void testDerivedCalculations() {
 
 ## 📝 API 集成檢查清單
 
-- [ ] FinMindMarginData DTO 已建立
-- [ ] Jackson 序列化配置正確
-- [ ] FinMindClient 已支援 fetchMarginData()
-- [ ] 衍生計算方法完整
-- [ ] 異常處理（融券為 0 的 NaN 情況）
-- [ ] 單元測試通過
-- [ ] 前端 UI 已整合
+- [x] FinMindMarginData DTO 已建立
+- [x] Jackson 序列化配置正確（`FinMindMarginResponse` 已由 `RestTemplate` production 路徑使用）
+- [x] FinMindClient 已支援 `fetchMarginData()` 與 `fetchMarginHistory()`
+- [x] 衍生計算方法完整，並由 `MarginAnalysisService`、`RadarService`、`MarketCrossScannerService` 使用
+- [x] 異常處理（融券為 0 時回傳 `Double.NaN`，UI 顯示 N/A）
+- [x] 單元測試通過（`FinMindMarginDataTest`、`MarginAnalysisServiceTest`）
+- [x] 前端 UI 已整合（`index.html`、`dashboard.html` 顯示融資趨勢、資券比與軋空警示）
+
+> 現況更新（2026-07-26）：production 整合、UI 與專屬單元測試均已完成；
+> 測試涵蓋衍生計算、融券為 0、資料不足、評分門檻及條件疊加。
 
 ---
 
 **版本**: v1.0  
-**狀態**: ✅ DTO 完成，編譯通過  
-**下一步**: 在業務模組中整合融資融券分析
+**狀態**: ✅ DTO、production 整合與 UI 完成
+**下一步**: 視產品需求擴充更多歷史趨勢與實機資料驗證
 

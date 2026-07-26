@@ -9,9 +9,12 @@ import java.util.List;
 public class DayTradingService {
 
     private final FinMindClient finMindClient;
+    private final InstitutionalDataRepository institutionalDataRepository;
 
-    public DayTradingService(FinMindClient finMindClient) {
+    public DayTradingService(FinMindClient finMindClient,
+                             InstitutionalDataRepository institutionalDataRepository) {
         this.finMindClient = finMindClient;
+        this.institutionalDataRepository = institutionalDataRepository;
     }
 
     public List<FinMindDayTradingData> getDayTradingHistory(String symbol, int days) {
@@ -21,7 +24,8 @@ public class DayTradingService {
         }
 
         int safeDays = Math.max(1, Math.min(days, 180));
-        List<FinMindDayTradingData> local = DatabaseManager.getDayTradingHistory(cleanSymbol, safeDays);
+        List<FinMindDayTradingData> local =
+                institutionalDataRepository.getDayTradingHistory(cleanSymbol, safeDays);
         if (local.size() >= Math.min(safeDays, 10)) {
             return local;
         }
@@ -29,10 +33,10 @@ public class DayTradingService {
         String startDate = LocalDate.now().minusDays(Math.max(30, safeDays * 2L)).toString();
         List<FinMindDayTradingData> fetched = finMindClient.fetchFinMindDayTradingData(cleanSymbol, startDate);
         if (!fetched.isEmpty()) {
-            DatabaseManager.saveDayTradingData(cleanSymbol, fetched);
+            institutionalDataRepository.saveDayTradingData(cleanSymbol, fetched);
         }
 
-        return DatabaseManager.getDayTradingHistory(cleanSymbol, safeDays);
+        return institutionalDataRepository.getDayTradingHistory(cleanSymbol, safeDays);
     }
 }
 

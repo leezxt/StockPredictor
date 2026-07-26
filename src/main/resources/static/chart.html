@@ -13,6 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
     <script src="chart-utils.js"></script>
     <script src="price-chart-renderer.js"></script>
+    <script src="history-backfill-client.js?v=20260723"></script>
     <style>
         :root {
             --chart-primary: #2563eb;
@@ -951,7 +952,7 @@
 
             try {
                 // 1. 向後端抓取資料
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
                 if (!response.ok) {
                     throw new Error('無法取得股票數據');
                 }
@@ -991,7 +992,7 @@
             setActiveChartMode('priceVolume');
 
             try {
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
                 if (!response.ok) {
                     throw new Error('無法取得價量數據');
                 }
@@ -1169,7 +1170,7 @@
 
             try {
                 const timeframe = getSelectedTimeframe();
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
                 if (!response.ok) {
                     throw new Error('無法取得 K 線資料');
                 }
@@ -1463,7 +1464,7 @@
             try {
                 const [macdResp, historyResp] = await Promise.all([
                     fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/macd?limit=60`),
-                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
+                    window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
                 ]);
 
                 if (!macdResp.ok) throw new Error('無法取得 MACD 資料');
@@ -2445,7 +2446,7 @@
 
             try {
                 // 1. 向後端抓取資料
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
                 if (!response.ok) {
                     throw new Error('無法取得股票數據');
                 }
@@ -2485,7 +2486,7 @@
             setActiveChartMode('priceVolume');
 
             try {
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
                 if (!response.ok) {
                     throw new Error('無法取得價量數據');
                 }
@@ -2664,7 +2665,7 @@
 
             try {
                 const timeframe = getSelectedTimeframe();
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/full-history?limit=480`);
                 if (!response.ok) {
                     throw new Error('無法取得 K 線資料');
                 }
@@ -2956,7 +2957,7 @@
             try {
                 const [macdResp, historyResp] = await Promise.all([
                     fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/macd?limit=60`),
-                    fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
+                    window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=60`)
                 ]);
 
                 if (!macdResp.ok) throw new Error('無法取得 MACD 資料');
@@ -3254,7 +3255,7 @@
             switchToInstitutionalPanel();
 
             try {
-                const response = await fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
+                const response = await window.StockHistoryBackfill.fetch(`${apiBaseUrl}/api/stocks/${encodeURIComponent(id)}/history?limit=120`);
                 if (!response.ok) {
                     throw new Error('無法取得股票數據');
                 }

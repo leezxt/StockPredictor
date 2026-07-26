@@ -1,255 +1,146 @@
-# MarketCrossScannerService ETF 折溢價集成指南
+# MarketCrossScannerService ETF 折溢價整合指南
 
-**版本**：v1.0  
-**日期**：2026-05-28  
-**狀態**：✅ 編譯通過 + 測試通過
+**原始版本**：v1.0（2026-05-28）
 
----
+**現況校準**：2026-07-26
 
-## 集成概述
+**狀態**：production 流程已整合；歷史 helper 保留相容性
 
-在 `MarketCrossScannerService` 中新增 **`calculateEtfMetrics()`** 方法，用於計算 ETF 市價相對淨值的折溢價比例。該方法自動從 FinMind API 獲取最新淨值，並回傳含折溢價資訊的 `RadarConfigDto` 物件給前端。
+## 現況摘要
 
----
+2026-05 的原始交付以 `calculateEtfMetrics()` 與 `RadarConfigDto` 說明 ETF NAV 與折溢價計算。現行 production 跨市場診斷已改由 `CrossDiagnosisController` 呼叫 `MarketCrossScannerService.crossTestBySymbol()`，回傳 `StockDiagnosticResult`。
 
-## 核心變更
+`calculateEtfMetrics()` 仍是 public helper，已使用動態 45 天查詢區間並防護無效 NAV，但目前沒有 production Java 呼叫端。請勿再以舊文件中的假想 `StockController` endpoint 當作現行 API。
 
-### 1. `RadarConfigDto` 新增欄位
+## Production 入口與資料流
 
-```java
-// ETF 專屬評估欄位
-private double netAssetValue;           // ETF 淨值 (NAV)
-private double premium;                 // 折溢價比例 (%)；負值=折價，正值=溢價
-private String netAssetValueSource;     // 淨值數據來源
+現行 REST endpoints：
+
+- `GET /api/cross/{symbol}`：單檔診斷。
+- `POST /api/cross/batch`：批次診斷，最多 50 個非空白代號。
+
+```text
+CrossDiagnosisController
+  → MarketCrossScannerService.crossTestBySymbol(symbol)
+  → StockUniverseRepository 判斷 ETF
+  → StockDataRepository 取得最新價格與一年歷史
+  → buildPriceInfo(symbol, true)
+      1. FinMindClient.fetchEtfDiscountPremium(symbol)
+         - TWSE／TPEx 公開 NAV 類來源優先
+         - FinMind 折溢價 datasets 備援
+      2. 若仍不可用，calculatePremiumRatioFromNav()
+         - fetchNavData(symbol, LocalDate.now().minusDays(45))
+         - 以最新有效正值 NAV 與市價自行計算
+      3. 全部不可用時標記 NOT_AVAILABLE
+  → analyzeEtfStrategy()
+  → StockDiagnosticResult
 ```
 
-**Getter/Setter**：
-```java
-public double getNetAssetValue()         // 取得淨值
-public void setNetAssetValue(double nav)
+production 流程內的折溢價比率使用 decimal：
 
-public double getPremium()               // 取得折溢價比例
-public void setPremium(double premium)
-
-public String getNetAssetValueSource()   // 取得數據源
-public void setNetAssetValueSource(String source)
+```text
+discountPremiumRatio = (市價 - NAV) / NAV
 ```
 
-### 2. `FinMindClient` 新增方法
+例如 `-0.012` 表示折價 `1.2%`。寫入 `StockDiagnosticResult.premium` 時才乘以 100，轉成百分比數值。
+
+## 資料來源優先序
+
+| 優先序 | 來源 | 成功時的 source |
+|---|---|---|
+| 1 | TWSE／TPEx NAV 類公開來源 | `TWSE_TPEX_PRIMARY` |
+| 2 | FinMind 折溢價 datasets | `FINMIND_FALLBACK` |
+| 3 | `TaiwanETFNavigation` 的 NAV 與本機最新市價自行計算 | `FinMind_NAV` |
+| 4 | 無可用資料 | `NOT_AVAILABLE` |
+
+`FinMindClient.fetchNavData(symbol, startDate)` 會：
+
+- 查詢 `TaiwanETFNavigation`。
+- 直接由 raw JSON `data` 陣列反序列化成 `FinMindNavData`。
+- 依日期升序回傳。
+- 對空白代號、空白日期、HTTP 錯誤與不可用回應降級為空清單。
+
+## ETF 策略規則
+
+ETF 不使用個股的三率三升判定。現行 `analyzeEtfStrategy()` 主要依以下條件分類：
+
+1. K 值低於 25 且出現 KD 黃金交叉：標記「ETF 點心時間」。
+2. 折溢價 decimal 小於 `-0.01`：標記「ETF 撿便宜」。
+3. 其他情況：標記等待更佳折價或技術訊號。
+
+最終分數由折溢價分數、KD 強度及融資分數組成。NAV 不可用時會保留 `navAvailable=false` 與來源狀態，不把 `0` 誤認為真實折溢價資料。
+
+## 歷史相容 helper
+
+原始交付的 public 方法仍保留：
 
 ```java
-/**
- * 取得 ETF 淨值 (NAV) 歷史數據
- *
- * @param symbol ETF 代碼 (如 0050、0056)
- * @param startDate 查詢起始日期 (格式: YYYY-MM-DD)
- * @return FinMindNavData 清單 (升序排列)
- */
-public List<FinMindNavData> fetchNavData(String symbol, String startDate)
-```
-
-**調用 API**：
-- Dataset: `TaiwanETFNavigation`
-- 傳入參數：`data_id=symbol&start_date=startDate`
-
-### 3. `MarketCrossScannerService` 新增方法
-
-```java
-/**
- * ETF 折溢價計算方法
- *
- * @param symbol 股票代碼 (ETF 代碼，如 0050、0056)
- * @param currentPrice 當前市價
- * @return 含淨值、折溢價的 RadarConfigDto 物件
- */
 public RadarConfigDto calculateEtfMetrics(String symbol, double currentPrice)
 ```
 
----
+其行為為：
 
-## 演算法：折溢價計算公式
+1. 查詢最近 45 天的 NAV。
+2. 從最新資料往回尋找第一筆大於 0 的 NAV。
+3. 計算百分比：
 
-```
-折溢價比例 (%) = ((市價 - 淨值) / 淨值) × 100
+   ```text
+   premium (%) = ((市價 - NAV) / NAV) × 100
+   ```
 
-含義：
-  負值 (< 0)    = 折價（市價 < 淨值）
-  正值 (> 0)    = 溢價（市價 > 淨值）
-  0             = 接近淨值
-```
+4. 成功時填入 `RadarConfigDto.netAssetValue`、`premium` 與來源。
+5. 無資料或 NAV 全部無效時回傳 `0`，並將來源設為 `NOT_AVAILABLE`。
 
-**範例**：
-- ETF 0050 淨值 50.25，市價 49.50 → 折價 -1.49%
-- ETF 0050 淨值 50.25，市價 51.00 → 溢價 +1.49%
+此 helper 與 production 的 NAV fallback 有部分重複。未完成公開相容性評估前先保留，不新增專屬 endpoint。
 
----
+## 依賴注入
 
-## 程式碼流程
+`MarketCrossScannerService` 與 `CrossDiagnosisController` 均使用 constructor injection。歷史文件中的 `@Autowired` field injection 範例已移除。
 
-```
-calculateEtfMetrics(symbol, currentPrice)
-  ↓
-1. 建立 RadarConfigDto 並設置 etf=true
-  ↓
-2. 呼叫 finMindClient.fetchNavData(symbol, queryDate)
-  ↓
-3. 若取得淨值資料：
-   - latestNav = 最新淨值
-   - premiumRatio = ((currentPrice - latestNav) / latestNav) * 100
-   - 填充 DTO: setNetAssetValue() / setPremium()
-  ↓
-4. 若無法取得淨值：
-   - 設置 netAssetValueSource = "NOT_AVAILABLE"
-   - 記錄警告日誌
-  ↓
-5. 回傳 DTO 給前端
-```
+需要的核心依賴包括：
 
----
+- `FinMindClient`
+- `StockUniverseRepository`
+- `StockDataRepository`
+- `IndicatorCalculator`
+- 基本面、融資與 KD 分析服務
 
-## 前端使用示例
+## 設定
 
-### ETF Tooltip 展示
-
-當使用者搜尋 ETF 代碼（如 0050）時，前端 dashboard 會顯示：
-
-```
-┌─────────────────────────────────────┐
-│ ⚡ ETF超賣防禦矩陣              [78%] │
-├─────────────────────────────────────┤
-│ ETF 代碼          0050              │
-│ 最新淨值(NAV)     50.25             │
-│ 當前市價          49.50             │
-│ 折價溢價比例      -1.49% (折價中)   │
-│ 估值狀態          🛒 撿便宜時機     │
-├─────────────────────────────────────┤
-│ 說明：ETF 目前處於折價狀態...       │
-└─────────────────────────────────────┘
-```
-
-### 後端回應 JSON
-
-```json
-{
-    "symbol": "0050",
-    "isEtf": true,
-    "netAssetValue": 50.25,
-    "premium": -1.49,
-    "netAssetValueSource": "FinMind / 臺灣證券交易所"
-}
-```
-
----
-
-## 防禦機制
-
-| 場景 | 處理方法 |
-|------|---------|
-| **淨值資料不可得** | 設置 `netAssetValueSource = "NOT_AVAILABLE"`；記錄警告日誌 |
-| **FinMind API 超時** | 返回空清單；回傳 premium = 0 |
-| **異常金額場景** | 使用 `try-catch` 捕捉，返回中性值 |
-
----
-
-## 集成步驟
-
-### Step 1：調用 calculateEtfMetrics
-
-```java
-@Service
-public class StockController {
-    @Autowired
-    private MarketCrossScannerService marketCrossScannerService;
-
-    @GetMapping("/api/stocks/{symbol}/etf-metrics")
-    public ResponseEntity<RadarConfigDto> getEtfMetrics(@PathVariable String symbol) {
-        double currentPrice = DatabaseManager.getLatestPrice(symbol);
-        RadarConfigDto result = marketCrossScannerService.calculateEtfMetrics(symbol, currentPrice);
-        return ResponseEntity.ok(result);
-    }
-}
-```
-
-### Step 2：補充完整六軸雷達分數
-
-```java
-// 計算完折溢價後，繼續計算技術面、籌碼面等
-RadarConfigDto dto = marketCrossScannerService.calculateEtfMetrics(symbol, currentPrice);
-
-// 補充其他維度分數（來自 RadarService）
-dto.setFundamentals(0);      // ETF 無基本面分數
-dto.setTechnicals(kdScore);  // 從技術指標計算
-dto.setVolatility(bbwScore); // 波動評分
-// ... 其他軸向 ...
-
-return dto;
-```
-
----
-
-## 配置需求
-
-確保 `application.properties` 包含 FinMind API 配置：
+`application.properties` 的現行 FinMind 設定：
 
 ```properties
+finmind.api.token=${FINMIND_API_TOKEN:}
 finmind.api.url=https://api.finmindtrade.com/api/v4/data
-finmind.api.token=YOUR_FINMIND_TOKEN
 finmind.api.login.url=https://api.finmindtrade.com/api/v4/login
-finmind.api.user-id=YOUR_USER_ID
-finmind.api.password=YOUR_PASSWORD
-finmind.api.auto-login=true
 ```
 
----
+Token 應由環境變數 `FINMIND_API_TOKEN` 提供，不要寫入 repository。登入帳密與自動重新登入屬選配；未設定時仍可依公開來源與可用 API 權限降級。
 
-## 預期結果
+## 防禦與失效情境
 
-### 折價偵測（超賣訊號）
+| 場景 | 現行處理 |
+|---|---|
+| symbol 空白 | client 不發請求；Controller／service 依入口規則拒絕或標記 skip |
+| primary 折溢價來源失敗 | 依序嘗試 FinMind dataset 與 NAV 自算 |
+| NAV 清單為空 | 標記 `NOT_AVAILABLE` |
+| 最新 NAV 為 0 或負值 | 往回尋找最新正值；全部無效才降級 |
+| current price 小於等於 0 | NAV 自算 fallback 不計算比率 |
+| FinMind HTTP／JSON 錯誤 | 記錄必要資訊並回傳不可用結果 |
 
-ETF 折價 >1% 時自動標記為「撿便宜時機」：
+NAV 與市價可能不是同一交易時點，因此自行計算的 `FinMind_NAV` 僅是 fallback 推估，不應視為盤中即時官方折溢價。
 
-```java
-double premium = dto.getPremium();
-if (premium < -1.0) {
-    dto.setValuationStatus("🛒 撿便宜時機");
-    // 可提升風控基期評分 +15 分
-}
-```
+## 驗證證據
 
-### 溢價警示（溢價高檔）
+截至 2026-07-26：
 
-ETF 溢價 >2% 時標記為「溢價高檔」：
+- `FinMindClientNavDataTest`：3 項，涵蓋 URL contract、JSON 映射、排序、空白參數與 HTTP 降級。
+- `MarketCrossScannerServiceTest`：10 項，涵蓋 ETF metadata、Repository 價格區間、primary 優先、NAV fallback、來源全失敗、NAV unavailable 中性化、折價門檻、KD 低檔黃金交叉、動態 NAV 日期、最新有效 NAV 與公式。
+- 完整 `mvn test`：182 項，0 failures、0 errors、0 skipped。
+- `PostgresqlRepositoryIntegrationTest` 7 項已透過 Docker Testcontainers 實際執行成功。
 
-```java
-if (premium > 2.0) {
-    dto.setValuationStatus("⚠️ 溢價高檔，風險增加");
-}
-```
+## 後續整理
 
----
-
-## 常見錯誤排除
-
-| 錯誤 | 原因 | 解決方案 |
-|------|------|---------|
-| `fetchNavData` 返回空清單 | FinMind API 無該 ETF 的淨值數據 | 確認 ETF 代碼正確；檢查 API 連線 |
-| `NullPointerException` | navList 為 null | 增加 null 檢查：`if (navList != null && !navList.isEmpty())` |
-| 折溢價計算異常 | 淨值為 0 或負數 | 驗證 NAV 欄位正確性 |
-
----
-
-## 驗證結果
-
-✅ 編譯通過  
-✅ 8/8 測試通過  
-✅ FinMindNavData DTO 完整  
-✅ FinMindClient fetchNavData 方法完整  
-✅ MarketCrossScannerService calculateEtfMetrics 方法完整  
-✅ RadarConfigDto ETF 欄位完整
-
----
-
-**版本**：v1.0  
-**狀態**：✅ 生產就緒  
-**文件日期**：2026-05-28
-
+- 評估 `calculateEtfMetrics()` 是否屬外部相容 contract；若否，可與 `calculatePremiumRatioFromNav()` 整併以消除重複。
+- 若要提供獨立 ETF metrics REST API，應先定義回應 contract、資料時點與來源語意，再由現有 constructor-injected Controller 接線。
+- PostgreSQL 正式切換仍需依 `POSTGRESQL_CUTOVER_CHECKLIST.md` 安排維護時段，不屬本文件校準範圍。

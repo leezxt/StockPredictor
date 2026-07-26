@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -25,8 +24,11 @@ public class CrossDiagnosisController {
     /** 單次批次最大筆數（保護 FinMind API 流量與後端負載） */
     private static final int BATCH_LIMIT = 50;
 
-    @Autowired
-    private MarketCrossScannerService marketCrossScannerService;
+    private final MarketCrossScannerService marketCrossScannerService;
+
+    public CrossDiagnosisController(MarketCrossScannerService marketCrossScannerService) {
+        this.marketCrossScannerService = marketCrossScannerService;
+    }
 
     @GetMapping("/{symbol}")
     public StockDiagnosticResult diagnoseSingle(@PathVariable("symbol") String symbol) {
@@ -35,17 +37,18 @@ public class CrossDiagnosisController {
 
     @PostMapping("/batch")
     public Map<String, Object> diagnoseBatch(@RequestBody BatchRequest request) {
-        Map<String, Object> response = new LinkedHashMap<>();
         if (request == null || request.symbols == null || request.symbols.isEmpty()) {
-            response.put("status", "error");
-            response.put("message", "請於 body 提供 symbols 陣列，例如 {\"symbols\":[\"2330\",\"0050\"]}");
-            return response;
+            throw new IllegalArgumentException(
+                    "請於 body 提供 symbols 陣列，例如 {\"symbols\":[\"2330\",\"0050\"]}。");
         }
 
         List<String> symbols = request.symbols.stream()
                 .filter(s -> s != null && !s.isBlank())
                 .limit(BATCH_LIMIT)
                 .toList();
+        if (symbols.isEmpty()) {
+            throw new IllegalArgumentException("symbols 至少需要一個非空白股票代號。");
+        }
 
         long startTime = System.currentTimeMillis();
         List<StockDiagnosticResult> diagnoses = new ArrayList<>();
@@ -58,6 +61,7 @@ public class CrossDiagnosisController {
             if (r.isPerfectMatch()) perfectMatches.add(r);
         }
 
+        Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
         response.put("totalRequested", request.symbols.size());
         response.put("totalScanned", symbols.size());

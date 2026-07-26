@@ -2,42 +2,34 @@ package org.gtalent;
 
 import org.gtalent.dto.BollingerResult;
 import org.gtalent.dto.IchimokuResult;
+import org.springframework.stereotype.Component;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+@Component
 public class IndicatorCalculator {
-    private IndicatorCalculator() {
+    private final StockDataRepository stockDataRepository;
+
+    public IndicatorCalculator(StockDataRepository stockDataRepository) {
+        this.stockDataRepository = stockDataRepository;
     }
 
     /**
      * 計算布林通道 (20, 2)
      */
-    public static BollingerResult calculateBollinger(String symbol) {
+    public BollingerResult calculateBollinger(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return new BollingerResult(0, 0, 0, 0);
         }
 
         int period = 20;
         List<Double> prices = new ArrayList<>();
-        String sql = "SELECT close_price FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, period);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    prices.add(rs.getDouble(1));
-                }
+        for (StockDataPoint point : stockDataRepository.getFullHistory(symbol.trim(), period)) {
+            if (point != null) {
+                prices.add(point.c);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
 
         if (prices.size() < period) {
@@ -62,7 +54,7 @@ public class IndicatorCalculator {
     /**
      * 計算一目均衡表
      */
-    public static IchimokuResult calculateIchimoku(String symbol) {
+    public IchimokuResult calculateIchimoku(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return new IchimokuResult(0, 0, 0, 0, 0);
         }
@@ -70,22 +62,9 @@ public class IndicatorCalculator {
         // 需要數據: 轉折線(9), 基準線(26), 先行帶B(52), 遲行帶(26日前)
         // 為了簡單起見，我們取最後 78 筆 (52 + 26)
         int needed = 78;
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT high_price, low_price, close_price FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, needed);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(null, 0, rs.getDouble("high_price"), rs.getDouble("low_price"), rs.getDouble("close_price"), 0));
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<StockDataPoint> data =
+                new ArrayList<>(stockDataRepository.getFullHistory(symbol.trim(), needed));
+        Collections.reverse(data);
 
         if (data.size() < 52) {
             return new IchimokuResult(0, 0, 0, 0, 0);
@@ -129,7 +108,7 @@ public class IndicatorCalculator {
      * 計算 VWAP (當日成交量加權平均價)
      * 這裡簡化為最近 20 日的加權平均
      */
-    public static double calculateVWAP(String symbol) {
+    public double calculateVWAP(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return 0.0;
         }
@@ -137,52 +116,24 @@ public class IndicatorCalculator {
         int period = 20;
         double totalValue = 0;
         long totalVolume = 0;
-        String sql = "SELECT close_price, volume FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, period);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    double price = rs.getDouble("close_price");
-                    long volume = rs.getLong("volume");
-                    totalValue += (price * volume);
-                    totalVolume += volume;
-                }
+        for (StockDataPoint point : stockDataRepository.getFullHistory(symbol.trim(), period)) {
+            if (point != null) {
+                totalValue += point.c * point.volume;
+                totalVolume += point.volume;
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
 
         return (totalVolume == 0) ? 0 : totalValue / totalVolume;
     }
 
-    public static double calculateRSI(String symbol, int period) {
+    public double calculateRSI(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period <= 0) {
             return 50.0;
         }
 
-        // 從資料庫抓最近 period+1 筆收盤價，再反轉為舊 -> 新
-        List<Double> prices = new ArrayList<>();
-        String sql = "SELECT close_price FROM STOCK_DATA WHERE symbol = ? " +
-                "ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, period + 1);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    prices.add(rs.getDouble(1));
-                }
-            }
-            Collections.reverse(prices);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<Double> prices = stockDataRepository.getFullHistory(symbol.trim(), period + 1).stream()
+                .map(point -> point.c)
+                .toList();
 
         if (prices.size() <= period) {
             return 50.0;
@@ -210,7 +161,7 @@ public class IndicatorCalculator {
         return 100.0 - (100.0 / (1.0 + rs));
     }
 
-    public static MACDResult calculateMACD(String symbol) {
+    public MACDResult calculateMACD(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return new MACDResult(0, 0, 0);
         }
@@ -219,21 +170,9 @@ public class IndicatorCalculator {
         int emaLong = 26;
         int deaPeriod = 9;
         int minCount = emaLong + deaPeriod; // 35
-        List<Double> prices = new ArrayList<>();
-        String sql = "SELECT close_price FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, minCount);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    prices.add(rs.getDouble(1));
-                }
-            }
-            Collections.reverse(prices);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<Double> prices = stockDataRepository.getFullHistory(symbol.trim(), minCount).stream()
+                .map(point -> point.c)
+                .toList();
         if (prices.size() < minCount) {
             return new MACDResult(0, 0, 0);
         }
@@ -270,7 +209,7 @@ public class IndicatorCalculator {
         return new MACDResult(dif, deaVal, histogram);
     }
 
-    public static List<MACDResult> calculateMACDSeries(String symbol, int limit) {
+    public List<MACDResult> calculateMACDSeries(String symbol, int limit) {
         if (symbol == null || symbol.isBlank() || limit <= 0) {
             return Collections.emptyList();
         }
@@ -278,21 +217,9 @@ public class IndicatorCalculator {
         int emaLong = 26;
         int deaPeriod = 9;
         int minCount = Math.max(limit, emaLong + deaPeriod); // ensure enough data
-        List<Double> prices = new ArrayList<>();
-        String sql = "SELECT close_price FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, minCount);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    prices.add(rs.getDouble(1));
-                }
-            }
-            Collections.reverse(prices);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<Double> prices = stockDataRepository.getFullHistory(symbol.trim(), minCount).stream()
+                .map(point -> point.c)
+                .toList();
         if (prices.size() < emaLong + deaPeriod) {
             return Collections.emptyList();
         }
@@ -338,7 +265,7 @@ public class IndicatorCalculator {
         }
     }
 
-    public static List<KDResult> calculateKD(String symbol, int limit) {
+    public List<KDResult> calculateKD(String symbol, int limit) {
         if (symbol == null || symbol.isBlank() || limit <= 0) {
             return Collections.emptyList();
         }
@@ -347,32 +274,7 @@ public class IndicatorCalculator {
         int rsvPeriod = 9;
         int totalNeeded = limit + rsvPeriod + 5; // 額外緩衝
 
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, open_price, high_price, low_price, close_price, volume " +
-                "FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, totalNeeded);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    StockDataPoint dp = new StockDataPoint(
-                        rs.getString("trade_date"),
-                        rs.getDouble("open_price"),
-                        rs.getDouble("high_price"),
-                        rs.getDouble("low_price"),
-                        rs.getDouble("close_price"),
-                        rs.getLong("volume")
-                    );
-                    data.add(dp);
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<StockDataPoint> data = stockDataRepository.getFullHistory(symbol.trim(), totalNeeded);
 
         if (data.size() < rsvPeriod) {
             return Collections.emptyList();
@@ -417,7 +319,7 @@ public class IndicatorCalculator {
         return kdResults;
     }
 
-    public static List<Double> calculateBBWSeries(String symbol, int limit) {
+    public List<Double> calculateBBWSeries(String symbol, int limit) {
         if (symbol == null || symbol.isBlank() || limit <= 0) {
             return Collections.emptyList();
         }
@@ -425,23 +327,9 @@ public class IndicatorCalculator {
         int maPeriod = 20;
         int totalNeeded = limit + maPeriod + 5;
 
-        List<Double> prices = new ArrayList<>();
-        String sql = "SELECT close_price FROM STOCK_DATA WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, totalNeeded);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    prices.add(rs.getDouble(1));
-                }
-            }
-            Collections.reverse(prices);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        List<Double> prices = stockDataRepository.getFullHistory(symbol.trim(), totalNeeded).stream()
+                .map(point -> point.c)
+                .toList();
 
         if (prices.size() < maPeriod) {
             return Collections.emptyList();
@@ -471,37 +359,13 @@ public class IndicatorCalculator {
         return bbwSeries;
     }
 
-    public static double calculateADX(String symbol, int period) {
+    public double calculateADX(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period <= 1) {
             return 0.0;
         }
 
         int totalNeeded = Math.max(period * 4, period + 5);
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, high_price, low_price, close_price FROM STOCK_DATA " +
-                "WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, totalNeeded);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(
-                            rs.getString("trade_date"),
-                            0.0,
-                            rs.getDouble("high_price"),
-                            rs.getDouble("low_price"),
-                            rs.getDouble("close_price"),
-                            0L
-                    ));
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return 0.0;
-        }
+        List<StockDataPoint> data = stockDataRepository.getFullHistory(symbol.trim(), totalNeeded);
 
         if (data.size() < period + 2) {
             return 0.0;
@@ -587,37 +451,13 @@ public class IndicatorCalculator {
         return Math.max(0.0, Math.min(100.0, adx));
     }
 
-    public static double calculateATR(String symbol, int period) {
+    public double calculateATR(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period <= 1) {
             return 0.0;
         }
 
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, high_price, low_price, close_price FROM STOCK_DATA " +
-                "WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
         int totalNeeded = Math.max(period * 3, period + 10);
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, totalNeeded);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(
-                            rs.getString("trade_date"),
-                            0.0,
-                            rs.getDouble("high_price"),
-                            rs.getDouble("low_price"),
-                            rs.getDouble("close_price"),
-                            0L
-                    ));
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return 0.0;
-        }
+        List<StockDataPoint> data = stockDataRepository.getFullHistory(symbol.trim(), totalNeeded);
 
         if (data.size() < period + 1) {
             return 0.0;
@@ -654,36 +494,12 @@ public class IndicatorCalculator {
     /**
      * OBV 強度（標準化）：約略落在 -1 ~ +1 區間，正值代表量價偏多。
      */
-    public static double calculateOBV(String symbol, int lookbackDays) {
+    public double calculateOBV(String symbol, int lookbackDays) {
         if (symbol == null || symbol.isBlank() || lookbackDays <= 1) {
             return 0.0;
         }
 
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, close_price, volume FROM STOCK_DATA " +
-                "WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, lookbackDays + 1);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(
-                            rs.getString("trade_date"),
-                            0.0,
-                            0.0,
-                            0.0,
-                            rs.getDouble("close_price"),
-                            rs.getLong("volume")
-                    ));
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return 0.0;
-        }
+        List<StockDataPoint> data = stockDataRepository.getFullHistory(symbol.trim(), lookbackDays + 1);
 
         if (data.size() < 3) {
             return 0.0;
@@ -720,36 +536,12 @@ public class IndicatorCalculator {
         return normalized;
     }
 
-    public static double calculateMFI(String symbol, int period) {
+    public double calculateMFI(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period <= 1) {
             return 50.0;
         }
 
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, high_price, low_price, close_price, volume FROM STOCK_DATA " +
-                "WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, period + 5);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(
-                            rs.getString("trade_date"),
-                            0.0,
-                            rs.getDouble("high_price"),
-                            rs.getDouble("low_price"),
-                            rs.getDouble("close_price"),
-                            rs.getLong("volume")
-                    ));
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return 50.0;
-        }
+        List<StockDataPoint> data = stockDataRepository.getFullHistory(symbol.trim(), period + 5);
 
         if (data.size() < period + 1) {
             return 50.0;
@@ -794,7 +586,7 @@ public class IndicatorCalculator {
     /**
      * SuperTrend 方向：1=多頭、-1=空頭、0=資料不足。
      */
-    public static int calculateSuperTrendDirection(String symbol, int period, double multiplier) {
+    public int calculateSuperTrendDirection(String symbol, int period, double multiplier) {
         if (symbol == null || symbol.isBlank() || period < 5 || multiplier <= 0) {
             return 0;
         }
@@ -865,7 +657,7 @@ public class IndicatorCalculator {
     /**
      * Donchian 位置值（0~1）：接近 1 代表貼近上軌，接近 0 代表貼近下軌。
      */
-    public static double calculateDonchianPosition(String symbol, int period) {
+    public double calculateDonchianPosition(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period < 5) {
             return 0.5;
         }
@@ -890,7 +682,7 @@ public class IndicatorCalculator {
         return Math.max(0.0, Math.min(1.0, (close - lowest) / (highest - lowest)));
     }
 
-    public static double calculateCMF(String symbol, int period) {
+    public double calculateCMF(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period < 5) {
             return 0.0;
         }
@@ -924,7 +716,7 @@ public class IndicatorCalculator {
         return Double.isFinite(cmf) ? Math.max(-1.0, Math.min(1.0, cmf)) : 0.0;
     }
 
-    public static double calculateCCI(String symbol, int period) {
+    public double calculateCCI(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period < 5) {
             return 0.0;
         }
@@ -964,7 +756,7 @@ public class IndicatorCalculator {
         return Double.isFinite(cci) ? cci : 0.0;
     }
 
-    public static double calculateWilliamsR(String symbol, int period) {
+    public double calculateWilliamsR(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period < 5) {
             return -50.0;
         }
@@ -989,7 +781,7 @@ public class IndicatorCalculator {
         return Double.isFinite(wr) ? Math.max(-100.0, Math.min(0.0, wr)) : -50.0;
     }
 
-    public static double calculateAroonOscillator(String symbol, int period) {
+    public double calculateAroonOscillator(String symbol, int period) {
         if (symbol == null || symbol.isBlank() || period < 5) {
             return 0.0;
         }
@@ -1023,31 +815,8 @@ public class IndicatorCalculator {
         return Double.isFinite(osc) ? Math.max(-100.0, Math.min(100.0, osc)) : 0.0;
     }
 
-    private static List<StockDataPoint> loadOhlcv(String symbol, int limit) {
-        List<StockDataPoint> data = new ArrayList<>();
-        String sql = "SELECT trade_date, high_price, low_price, close_price, volume FROM STOCK_DATA " +
-                "WHERE symbol = ? ORDER BY trade_date DESC LIMIT ?";
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, symbol.trim());
-            pstmt.setInt(2, Math.max(10, limit));
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    data.add(new StockDataPoint(
-                            rs.getString("trade_date"),
-                            0.0,
-                            rs.getDouble("high_price"),
-                            rs.getDouble("low_price"),
-                            rs.getDouble("close_price"),
-                            rs.getLong("volume")
-                    ));
-                }
-            }
-            Collections.reverse(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return data;
+    private List<StockDataPoint> loadOhlcv(String symbol, int limit) {
+        return stockDataRepository.getFullHistory(symbol.trim(), Math.max(10, limit));
     }
 
     private static List<Double> calculateAtrSeries(List<StockDataPoint> data, int period) {

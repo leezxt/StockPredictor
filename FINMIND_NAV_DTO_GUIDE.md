@@ -4,6 +4,12 @@
 **日期**：2026-05-28  
 **狀態**：✅ 編譯通過 + 測試通過
 
+> 現況更新（2026-07-26）：production 方法為 `FinMindClient.fetchNavData(symbol, startDate)`，
+> 由 `ScannerService`、`MarketCrossScannerService` 與 `SymbolProfileService` 使用。
+> NAV 原始 JSON contract、日期排序、空白參數與 HTTP 錯誤降級由
+> `FinMindClientNavDataTest` 驗證；下方 `fetchEtfNavHistory()`／`EtfValuationService`
+> 程式片段保留為 2026-05 的設計示例，不代表現行類別名稱。
+
 ---
 
 ## FinMindNavData DTO 概述
@@ -235,7 +241,7 @@ public class RadarService {
         
         if (result.etfMode) {
             // ETF 專屬路由：加入折價溢價評估
-            double currentPrice = DatabaseManager.getLatestPrice(symbol);
+            double currentPrice = stockDataRepository.getLatestPrice(symbol);
             EtfValuationResult valuation = etfValuationService.evaluateEtfValuation(symbol, currentPrice);
             
             if (valuation != null) {
@@ -266,17 +272,15 @@ GET /TaiwanETFNavigation
 ↓
 JSON Response [{date, stock_id, NAV}, ...]
 ↓
-FinMindClient.fetchEtfNavHistory()
+FinMindClient.fetchNavData()
 ↓
 List<FinMindNavData>
 ↓
-EtfValuationService.evaluateEtfValuation()
+ScannerService / MarketCrossScannerService / SymbolProfileService
 ↓
 計算折價溢價 → 分類估值狀態
 ↓
-RadarService(ETF 模式) 加權評分調整
-↓
-RadarScoreResult JSON 回傳前端
+ETF 評分、跨市場分析與 symbol profile 回傳
 ```
 
 ---
@@ -346,7 +350,7 @@ FinMindNavData nav = new FinMindNavData("2026-05-28", "0050", 50.25);
 ## 驗證結果
 
 ✅ 編譯通過  
-✅ 8/8 測試通過  
+✅ `FinMindClientNavDataTest` 3 項 contract test 通過
 ✅ Jackson 序列化無誤  
 ✅ 輔助方法邏輯完整  
 ✅ 文檔和示例完善

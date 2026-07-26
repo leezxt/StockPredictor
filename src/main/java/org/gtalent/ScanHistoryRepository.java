@@ -16,7 +16,7 @@ public interface ScanHistoryRepository extends JpaRepository<ScanHistory, Long> 
     @Query(value = "SELECT h.symbol, h.score, h.price_at_scan, d.close_price " +
             "FROM SCAN_HISTORY h " +
             "JOIN STOCK_DATA d ON h.symbol = d.symbol " +
-            "WHERE h.scan_date = :targetDate AND d.trade_date = CURRENT_DATE()",
+            "WHERE h.scan_date = :targetDate AND d.trade_date = CURRENT_DATE",
             nativeQuery = true)
     List<Object[]> findBacktestComparison(@Param("targetDate") LocalDate targetDate);
 }

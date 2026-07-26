@@ -35,7 +35,7 @@
 - `ScannerService` / `RadarService`: 選股與雷達評分
 - `ScoreEngine` / `StrategyScorer`: 多面向評分 (趨勢、動能、籌碼、波動、市場廣度、基本面)
 - `BacktestEngine` / `KellyCalculator`: 回測與凱利公式倉位
-- `DatabaseManager`: HikariCP + 手動 schema 管理 (不走 Hibernate ddl-auto)
+- `DatabaseSchemaInitializer` / Repository: Flyway schema 管理與資料存取 (不走 Hibernate ddl-auto)
 
 ### 開發約定
 - **封裝**: Controller (Web) / Service (Business Logic) / Repository (Data Access) / DTO / Model / Config

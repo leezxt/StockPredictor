@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -96,11 +95,17 @@ public class AdvancedFundamentalService {
     /** 季度天數（用於計算存貨週轉天數） */
     private static final double DAYS_PER_QUARTER = 91.25;
 
-    @Autowired
-    private FundamentalService fundamentalService;
+    private final FundamentalService fundamentalService;
+    private final FinMindClient finMindClient;
+    private final FinancialDataRepository financialDataRepository;
 
-    @Autowired
-    private FinMindClient finMindClient;
+    public AdvancedFundamentalService(FundamentalService fundamentalService,
+                                      FinMindClient finMindClient,
+                                      FinancialDataRepository financialDataRepository) {
+        this.fundamentalService = fundamentalService;
+        this.finMindClient = finMindClient;
+        this.financialDataRepository = financialDataRepository;
+    }
 
     // ════════════════════════════════════════════════════════════
     //  公開 API
@@ -180,7 +185,8 @@ public class AdvancedFundamentalService {
         int safeQuarters = Math.max(2, Math.min(quarters, 16));
 
         // ── 1. 優先讀取 DB 快取（避免重複打 FinMind API） ──────────────────────────
-        List<FinancialQuarterData> cached = DatabaseManager.getFinancialQuarterHistory(symbol, safeQuarters);
+        List<FinancialQuarterData> cached =
+                financialDataRepository.getFinancialQuarterHistory(symbol, safeQuarters);
         if (cached.size() >= safeQuarters) {
             logger.fine("[AdvancedFundamental] DB 快取命中(" + symbol + ")，共 " + cached.size() + " 季");
             return cached;
@@ -248,7 +254,7 @@ public class AdvancedFundamentalService {
                     (long) contractLiab
             );
             quarterMap.put(date, qd);
-            DatabaseManager.saveFinancialQuarterData(symbol, qd); // 寫入快取
+            financialDataRepository.saveFinancialQuarterData(symbol, qd); // 寫入快取
         }
 
         // 補充僅資產負債表有但損益表無的季度
@@ -267,7 +273,7 @@ public class AdvancedFundamentalService {
                         (long) contractLiab
                 );
                 quarterMap.put(date, qd);
-                DatabaseManager.saveFinancialQuarterData(symbol, qd);
+                financialDataRepository.saveFinancialQuarterData(symbol, qd);
             }
         }
 

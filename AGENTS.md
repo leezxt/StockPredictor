@@ -25,13 +25,13 @@
   - `ScannerService` / `RadarService`：選股與雷達評分
   - `ScoreEngine` / `StrategyScorer`：多面向評分（趨勢、動能、籌碼、波動、市場廣度、基本面）
   - `BacktestEngine` / `KellyCalculator`：回測與凱利公式倉位
-  - `DatabaseManager`：HikariCP + 手動 schema 管理（**不**走 Hibernate ddl-auto）
+  - `DatabaseSchemaInitializer` / Repository：Flyway schema 管理與資料存取（**不**走 Hibernate ddl-auto）
 - **設定檔**：`src/main/resources/application.properties`（評分權重可熱調，DevTools 會自動 restart）
 
 ## 工作守則
 
 - 編輯 `application.properties` 的權重時，先確認對應的程式碼讀取點（通常在 `AppConfig` 或對應 service 的 `@Value`）。
-- `DatabaseManager` 已自行管理連線池，請勿建立第二組 DataSource。
+- Spring Boot 管理單一 `DataSource`；各 Repository 共用此連線池，請勿建立第二組 DataSource。
 - 修改評分邏輯前，先看 `StrategyScorer` / `ScoreEngine` 既有規則，避免重複實作。
 - 動到 FinMind 相關呼叫時，注意 API 速率限制與 token 認證流程（`FinMindClient`）。
 

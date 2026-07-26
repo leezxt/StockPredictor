@@ -250,10 +250,10 @@ if (ratio > 2.5 && marginNet > 10000) {
 
 ### 立即可做
 
-- [ ] 在 FinMindClient 中實現 fetchMarginData() 方法
-- [ ] 在業務模組中整合融資融券分析
-- [ ] 編寫單元測試
-- [ ] 前端 UI 展示融資融券指標
+- [x] 在 `FinMindClient` 中實現 `fetchMarginData()` 與 production 使用的 `fetchMarginHistory()`
+- [x] 在業務模組中整合融資融券分析（`MarginAnalysisService`、`RadarService`、`MarketCrossScannerService`）
+- [x] 編寫單元測試（DTO、評分規則、client JSON contract 與錯誤降級）
+- [x] 前端 UI 展示融資融券指標（`index.html`、`dashboard.html`）
 
 ### 後續優化
 
@@ -265,6 +265,6 @@ if (ratio > 2.5 && marginNet > 10000) {
 ---
 
 **版本**: v1.0  
-**狀態**: ✅ 編譯通過，即可使用  
-**建議**: 立即在籌碼分析模組中整合此 DTO
+**狀態**: ✅ production 整合、前端展示與自動化測試完成
+**建議**: 後續依產品需求評估法人關聯與更完整的歷史預警模型
 

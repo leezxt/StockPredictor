@@ -1,5 +1,7 @@
 package org.gtalent;
 
+import org.springframework.stereotype.Service;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -11,21 +13,23 @@ import java.util.List;
  * - 訊號於當日收盤確認，於次日開盤成交
  * - 若最後仍持有部位，使用期末收盤價強制結算
  */
+@Service
 public class BacktestEngine {
     private static final double DEFAULT_INITIAL_CAPITAL = 100_000.0;
+    private final StockDataRepository stockDataRepository;
 
-    private BacktestEngine() {
-        // Utility class
+    public BacktestEngine(StockDataRepository stockDataRepository) {
+        this.stockDataRepository = stockDataRepository;
     }
 
-    public static BacktestResult runMovingAverageCrossover(String symbol,
-                                                           int shortWindow,
-                                                           int longWindow,
-                                                           int lookbackDays) {
+    public BacktestResult runMovingAverageCrossover(String symbol,
+                                                    int shortWindow,
+                                                    int longWindow,
+                                                    int lookbackDays) {
         return runMovingAverageCrossover(symbol, shortWindow, longWindow, lookbackDays, DEFAULT_INITIAL_CAPITAL);
     }
 
-    public static void runBacktest(String symbol) {
+    public void runBacktest(String symbol) {
         BacktestResult result = runDiagnosisBacktest(symbol, 250, DEFAULT_INITIAL_CAPITAL);
 
         System.out.println("--- 回測報告 ---");
@@ -48,10 +52,10 @@ public class BacktestEngine {
         }
     }
 
-    public static BacktestResult runDiagnosisBacktest(String symbol, int lookbackDays, double initialCapital) {
+    public BacktestResult runDiagnosisBacktest(String symbol, int lookbackDays, double initialCapital) {
         String cleanSymbol = symbol == null ? "" : symbol.trim();
         int fetchDays = Math.max(lookbackDays, 250) + 60;
-        List<StockDataPoint> fullHistory = DatabaseManager.getHistoryForBacktest(cleanSymbol, fetchDays);
+        List<StockDataPoint> fullHistory = stockDataRepository.getFullHistory(cleanSymbol, fetchDays);
 
         BacktestResult result = baseResult(cleanSymbol, 5, 60, lookbackDays, initialCapital);
         result.strategy = "趨勢診斷策略";
@@ -167,18 +171,18 @@ public class BacktestEngine {
         return result;
     }
 
-    public static BacktestResult runMovingAverageCrossover(String symbol,
-                                                           int shortWindow,
-                                                           int longWindow,
-                                                           int lookbackDays,
-                                                           double initialCapital) {
+    public BacktestResult runMovingAverageCrossover(String symbol,
+                                                    int shortWindow,
+                                                    int longWindow,
+                                                    int lookbackDays,
+                                                    double initialCapital) {
         validateParams(shortWindow, longWindow, initialCapital);
 
         String cleanSymbol = symbol == null ? "" : symbol.trim();
         int effectiveLookbackDays = Math.max(longWindow + 2, lookbackDays);
         int fetchDays = effectiveLookbackDays + longWindow + 5;
 
-        List<StockDataPoint> history = DatabaseManager.getFullHistory(cleanSymbol, fetchDays);
+        List<StockDataPoint> history = stockDataRepository.getFullHistory(cleanSymbol, fetchDays);
         return runMovingAverageCrossover(cleanSymbol, history, shortWindow, longWindow, lookbackDays, initialCapital);
     }
 

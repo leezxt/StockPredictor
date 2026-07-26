@@ -146,8 +146,11 @@
 ```java
 @Service
 public class StockAnalysisService {
-    @Autowired
-    private FinMindClient finMindClient;
+    private final FinMindClient finMindClient;
+
+    public StockAnalysisService(FinMindClient finMindClient) {
+        this.finMindClient = finMindClient;
+    }
     
     public void analyzeStock(String symbol) {
         List<FinMindChipData> data = finMindClient
@@ -172,8 +175,11 @@ curl "http://localhost:8080/api/finmind/chip-score?symbol=2330"
 
 ### 示例 3: 多源查詢
 ```java
-@Autowired
-private EnhancedInstitutionalService enhancedService;
+private final EnhancedInstitutionalService enhancedService;
+
+public StockAnalysisService(EnhancedInstitutionalService enhancedService) {
+    this.enhancedService = enhancedService;
+}
 
 // 自動嘗試本地 > TWSE > FinMind
 List<InstitutionalTrade> trades = 

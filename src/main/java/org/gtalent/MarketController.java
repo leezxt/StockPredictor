@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
@@ -11,7 +10,6 @@ public class MarketController {
 
     private final MarketBreadthService breadthService;
 
-    @Autowired
     public MarketController(MarketBreadthService breadthService) {
         this.breadthService = breadthService;
     }

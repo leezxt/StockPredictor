@@ -8,7 +8,7 @@ StockPredictor 是一個台股分析工具，使用 Spring Boot 後端、H2 內�
 
 - Java 17：後端服務、掃描邏輯、技術指標、資料快取與 REST API。
 - HTML / CSS / JavaScript：主頁、K 線、KD、價量與分析儀表板。
-- SQL / H2：本機資料儲存，schema 由 `DatabaseManager` 手動建立。
+- SQL / H2：本機資料儲存，schema 由 Flyway／`DatabaseSchemaInitializer` 管理。
 - Maven：建置、測試與 Spring Boot 可執行 JAR 打包。
 - Docker / Compose：跨平台部署，包含 amd64 與 arm64 映像交付。
 
@@ -41,7 +41,7 @@ StockPredictor is a Taiwan stock analysis tool built with a Spring Boot backend,
 
 - Java 17: backend services, scanning logic, technical indicators, data caching, and REST APIs.
 - HTML / CSS / JavaScript: dashboard, candlestick chart, KD analysis, price-volume views, and analysis pages.
-- SQL / H2: local persistence, with schema managed manually by `DatabaseManager`.
+- SQL / H2: local persistence, with schema managed by Flyway and `DatabaseSchemaInitializer`.
 - Maven: build, test, and Spring Boot executable JAR packaging.
 - Docker / Compose: cross-platform deployment with amd64 and arm64 image artifacts.
 

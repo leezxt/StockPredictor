@@ -6,13 +6,18 @@ import java.util.List;
 
 @Service
 public class VolumeAnalysisService {
+    private final StockDataRepository stockDataRepository;
+
+    public VolumeAnalysisService(StockDataRepository stockDataRepository) {
+        this.stockDataRepository = stockDataRepository;
+    }
 
     /**
      * 偵測成交量異常
      */
     public VolumeAnomalyResult detectVolumeAnomaly(String symbol) {
         // 取最近 6 筆數據 (今日 + 過去 5 日均量)
-        List<StockDataPoint> history = DatabaseManager.getRecentHistory(symbol, 6);
+        List<StockDataPoint> history = stockDataRepository.getRecentHistory(symbol, 6);
         if (history.size() < 6) {
             return new VolumeAnomalyResult("資料不足", 1.0, 0, "歷史資料不足 6 筆，無法計算均量");
         }

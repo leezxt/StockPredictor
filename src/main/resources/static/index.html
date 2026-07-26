@@ -6,6 +6,7 @@
     <title>股市預測系統 - 網頁版</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="chart-utils.js"></script>
+    <script src="history-backfill-client.js?v=20260723"></script>
     <style>
         :root {
             --bg: #eef2f7;
@@ -1262,7 +1263,7 @@
 
         async function fetchApi(path, init) {
             try {
-                const response = await fetch(path, init);
+                const response = await window.StockHistoryBackfill.fetch(path, init);
                 if (response.status !== 404 || !allowLocalFallback) {
                     return response;
                 }
@@ -1272,7 +1273,7 @@
                 }
             }
             const currentPort = localStorage.getItem('api-port') || '19090';
-            return fetch(`http://localhost:${currentPort}${path}`, init);
+            return window.StockHistoryBackfill.fetch(`http://localhost:${currentPort}${path}`, init);
         }
 
         async function fetchJsonApi(path, init) {

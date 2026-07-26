@@ -44,6 +44,11 @@ public class FundamentalService {
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
+    private final MarketDataRepository marketDataRepository;
+
+    public FundamentalService(MarketDataRepository marketDataRepository) {
+        this.marketDataRepository = marketDataRepository;
+    }
 
     public int calculateRevenueScore(List<RevenueData> revenueHistory) {
         if (revenueHistory == null || revenueHistory.size() < 3) return 0;
@@ -97,19 +102,19 @@ public class FundamentalService {
 
         int safeMonths = Math.max(1, Math.min(months, 120));
         boolean refreshed = refreshLatestRevenueData(cleanSymbol);
-        List<RevenueData> history = DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        List<RevenueData> history = marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
         if (history.size() >= safeMonths) {
             return history;
         }
 
         backfillRevenueHistory(cleanSymbol, safeMonths);
-        history = DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        history = marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
         if (!refreshed || !history.isEmpty()) {
             return history;
         }
 
         refreshLatestRevenueData();
-        return DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        return marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
     }
 
     // For latency-sensitive flows (e.g., radar endpoint), avoid expensive history backfill.
@@ -120,13 +125,13 @@ public class FundamentalService {
         }
 
         int safeMonths = Math.max(1, Math.min(months, 24));
-        List<RevenueData> history = DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        List<RevenueData> history = marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
         if (history.size() >= Math.min(3, safeMonths)) {
             return history;
         }
 
         refreshLatestRevenueData(cleanSymbol);
-        return DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        return marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
     }
 
     public RevenueData getLatestRevenueData(String symbol) {
@@ -141,14 +146,14 @@ public class FundamentalService {
         }
 
         int safeMonths = Math.max(1, Math.min(months, 120));
-        List<RevenueData> current = DatabaseManager.getRevenueHistory(cleanSymbol, safeMonths);
+        List<RevenueData> current = marketDataRepository.getRevenueHistory(cleanSymbol, safeMonths);
         if (current.size() >= safeMonths) {
             return 0;
         }
 
         List<RevenueData> fetched = fetchRevenueHistoryFromGoodinfo(cleanSymbol, safeMonths);
         for (RevenueData item : fetched) {
-            DatabaseManager.saveRevenueData(cleanSymbol, item);
+            marketDataRepository.saveRevenueData(cleanSymbol, item);
         }
         return fetched.size();
     }
@@ -319,7 +324,7 @@ public class FundamentalService {
                 continue;
             }
 
-            DatabaseManager.saveRevenueData(symbol, revenueData);
+            marketDataRepository.saveRevenueData(symbol, revenueData);
             saved++;
         }
         return saved;

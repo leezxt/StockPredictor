@@ -1,6 +1,6 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -23,31 +23,46 @@ public class ScheduledService {
 
     private final ConcurrentHashMap<String, BackupState> backupStates = new ConcurrentHashMap<>();
 
-    @Autowired
-    private ScannerService scannerService;
+    private final ScannerService scannerService;
+    private final MarketBreadthService marketBreadthService;
+    private final FundamentalService fundamentalService;
+    private final InstitutionalService institutionalService;
+    private final BulkFetchService bulkFetchService;
+    private final TwseService twseService;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final AppMetaRepository appMetaRepository;
 
-    @Autowired
-    private MarketBreadthService marketBreadthService;
+    @Value("${app.scheduling.enabled:true}")
+    private boolean schedulingEnabled;
 
-    @Autowired
-    private FundamentalService fundamentalService;
-
-    @Autowired
-    private InstitutionalService institutionalService;
-
-    @Autowired
-    private BulkFetchService bulkFetchService;
+    public ScheduledService(ScannerService scannerService,
+                            MarketBreadthService marketBreadthService,
+                            FundamentalService fundamentalService,
+                            InstitutionalService institutionalService,
+                            BulkFetchService bulkFetchService,
+                            TwseService twseService,
+                            StockUniverseRepository stockUniverseRepository,
+                            AppMetaRepository appMetaRepository) {
+        this.scannerService = scannerService;
+        this.marketBreadthService = marketBreadthService;
+        this.fundamentalService = fundamentalService;
+        this.institutionalService = institutionalService;
+        this.bulkFetchService = bulkFetchService;
+        this.twseService = twseService;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.appMetaRepository = appMetaRepository;
+    }
 
     /**
      * 每天凌晨 1:30 同步一次全市場股票池，供掃描/廣度/批次任務使用。
      */
     @Scheduled(cron = "0 30 1 * * *")
     public void dailyStockUniverseRefresh() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始同步全市場股票池...");
         try {
-            TwseService twse = new TwseService();
-            int saved = twse.syncMarketUniverse();
-            int total = DatabaseManager.getStockUniverseCount();
+            int saved = twseService.syncMarketUniverse();
+            int total = stockUniverseRepository.getStockUniverseCount();
             System.out.println("[ScheduledService] 股票池同步完成：saved=" + saved + ", total=" + total);
         } catch (Exception e) {
             System.err.println("[ScheduledService] 股票池同步失敗: " + e.getMessage());
@@ -60,6 +75,7 @@ public class ScheduledService {
      */
     @Scheduled(cron = "0 0 2 * * *")
     public void dailyDataFetch() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始全市場每日收盤資料更新...");
         try {
             int saved = bulkFetchService.bulkSaveTodayData();
@@ -75,6 +91,7 @@ public class ScheduledService {
      */
     @Scheduled(cron = "0 0 3 * * *")
     public void dailyInstitutionalRefresh() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始批次補抓法人資料...");
         try {
             scannerService.refreshInstitutionalData();
@@ -89,6 +106,7 @@ public class ScheduledService {
      */
     @Scheduled(cron = "0 30 3 * * *")
     public void dailyMarketBreadthSnapshot() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始更新 MARKET_BREADTH 快照...");
         try {
             MarketBreadthResult result = marketBreadthService.calculateMarketBreadth();
@@ -103,6 +121,7 @@ public class ScheduledService {
      */
     @Scheduled(cron = "0 10 9 * * *")
     public void dailyRevenueRefresh() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始更新 MONTHLY_REVENUE 快照...");
         try {
             int saved = fundamentalService.refreshLatestRevenueData();
@@ -117,6 +136,7 @@ public class ScheduledService {
      */
     @Scheduled(cron = "0 0 17 * * FRI", zone = "Asia/Taipei")
     public void weeklyLargeHolderRefresh() {
+        if (!schedulingEnabled) return;
         System.out.println("[ScheduledService] 開始每週股權分散更新...");
         try {
             int saved = institutionalService.refreshWeeklyLargeHolderShareholding();
@@ -130,19 +150,22 @@ public class ScheduledService {
      * 應用啟動時執行：僅首次啟動會進行完整年度備份，之後跳過。
      */
     public void onStartup() {
-        if (DatabaseManager.isMetaFlagSet(INITIAL_BACKUP_META_KEY)) {
+        if (!schedulingEnabled) {
+            System.out.println("[ScheduledService] 排程已停用，跳過首次啟動自動備份");
+            return;
+        }
+        if (appMetaRepository.isMetaFlagSet(INITIAL_BACKUP_META_KEY)) {
             System.out.println("[ScheduledService] 非首次啟動，跳過自動備份（可透過 UI 手動觸發）");
             return;
         }
         System.out.println("[ScheduledService] 首次啟動 - 開始年度數據備份...");
         try {
-            TwseService twse = new TwseService();
-            int universeSaved = twse.syncMarketUniverse();
-            twse.fetchYearlyData(STOCK_CODE, BATCH_YEAR, BATCH_MONTH);
+            int universeSaved = twseService.syncMarketUniverse();
+            twseService.fetchYearlyData(STOCK_CODE, BATCH_YEAR, BATCH_MONTH);
             marketBreadthService.calculateMarketBreadth();
             fundamentalService.refreshLatestRevenueData();
-            DatabaseManager.setMetaFlag(INITIAL_BACKUP_META_KEY, "true");
-            System.out.println("[ScheduledService] 年度備份完成！股票池 saved=" + universeSaved + ", total=" + DatabaseManager.getStockUniverseCount());
+            appMetaRepository.setMetaFlag(INITIAL_BACKUP_META_KEY, "true");
+            System.out.println("[ScheduledService] 年度備份完成！股票池 saved=" + universeSaved + ", total=" + stockUniverseRepository.getStockUniverseCount());
         } catch (Exception e) {
             System.err.println("[ScheduledService] 年度備份失敗: " + e.getMessage());
         }
@@ -163,8 +186,7 @@ public class ScheduledService {
         backupStates.put(symbol, new BackupState(BackupStatus.RUNNING, symbol, "備份中...", System.currentTimeMillis()));
         new Thread(() -> {
             try {
-                TwseService twse = new TwseService();
-                twse.fetchYearlyData(symbol, BATCH_YEAR, BATCH_MONTH);
+                twseService.fetchYearlyData(symbol, BATCH_YEAR, BATCH_MONTH);
                 backupStates.put(symbol, new BackupState(BackupStatus.DONE, symbol, "備份完成", System.currentTimeMillis()));
                 System.out.println("[ScheduledService] 單檔備份完成: " + symbol);
             } catch (Exception e) {
@@ -207,13 +229,12 @@ public class ScheduledService {
         backupStates.put(FULL_BACKUP_KEY, new BackupState(BackupStatus.RUNNING, FULL_BACKUP_KEY, "完整備份中...", System.currentTimeMillis()));
         new Thread(() -> {
             try {
-                TwseService twse = new TwseService();
-                int universeSaved = twse.syncMarketUniverse();
-                twse.fetchYearlyData(STOCK_CODE, BATCH_YEAR, BATCH_MONTH);
+                int universeSaved = twseService.syncMarketUniverse();
+                twseService.fetchYearlyData(STOCK_CODE, BATCH_YEAR, BATCH_MONTH);
                 marketBreadthService.calculateMarketBreadth();
                 fundamentalService.refreshLatestRevenueData();
-                DatabaseManager.setMetaFlag(INITIAL_BACKUP_META_KEY, "true");
-                String msg = "完整備份完成！股票池 saved=" + universeSaved + ", total=" + DatabaseManager.getStockUniverseCount();
+                appMetaRepository.setMetaFlag(INITIAL_BACKUP_META_KEY, "true");
+                String msg = "完整備份完成！股票池 saved=" + universeSaved + ", total=" + stockUniverseRepository.getStockUniverseCount();
                 backupStates.put(FULL_BACKUP_KEY, new BackupState(BackupStatus.DONE, FULL_BACKUP_KEY, msg, System.currentTimeMillis()));
                 System.out.println("[ScheduledService] " + msg);
             } catch (Exception e) {

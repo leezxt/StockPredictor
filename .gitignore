@@ -26,3 +26,11 @@ WORK_HANDOFF.md
 
 packaging-assets/*.db
 packaging-assets/*.mv.db
+
+# Local cutover credentials
+.env.postgresql.local
+
+# Local verification artifacts and database backups
+.playwright-cli/
+output/
+backups/

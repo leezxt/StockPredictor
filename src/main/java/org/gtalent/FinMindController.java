@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,11 +23,15 @@ import java.util.Map;
 @RequestMapping("/api/finmind")
 public class FinMindController {
 
-    @Autowired
-    private FinMindClient finMindClient;
+    private final FinMindClient finMindClient;
 
-    @Autowired
-    private EnhancedInstitutionalService enhancedInstitutionalService;
+    private final EnhancedInstitutionalService enhancedInstitutionalService;
+
+    public FinMindController(FinMindClient finMindClient,
+                             EnhancedInstitutionalService enhancedInstitutionalService) {
+        this.finMindClient = finMindClient;
+        this.enhancedInstitutionalService = enhancedInstitutionalService;
+    }
 
     /**
      * 獲取籌碼資料
@@ -42,20 +45,15 @@ public class FinMindController {
             @RequestParam(name = "symbol") String symbol,
             @RequestParam(name = "startDate") String startDate) {
 
-        try {
-            List<FinMindChipData> data = finMindClient.fetchChipData(symbol, startDate);
+        List<FinMindChipData> data = finMindClient.fetchChipData(symbol, startDate);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("startDate", startDate);
-            response.put("dataCount", data.size());
-            response.put("data", data);
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("startDate", startDate);
+        response.put("dataCount", data.size());
+        response.put("data", data);
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法獲取數據: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -66,19 +64,14 @@ public class FinMindController {
      */
     @GetMapping("/latest")
     public ResponseEntity<?> getLatestChipData(@RequestParam(name = "symbol") String symbol) {
-        try {
-            List<FinMindChipData> data = finMindClient.fetchLatestChipData(symbol);
+        List<FinMindChipData> data = finMindClient.fetchLatestChipData(symbol);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("dataCount", data.size());
-            response.put("data", data);
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("dataCount", data.size());
+        response.put("data", data);
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法獲取數據: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -95,21 +88,16 @@ public class FinMindController {
             @RequestParam(name = "startDate") String startDate,
             @RequestParam(name = "endDate") String endDate) {
 
-        try {
-            List<FinMindChipData> data = finMindClient.fetchChipDataByDateRange(symbol, startDate, endDate);
+        List<FinMindChipData> data = finMindClient.fetchChipDataByDateRange(symbol, startDate, endDate);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("startDate", startDate);
-            response.put("endDate", endDate);
-            response.put("dataCount", data.size());
-            response.put("data", data);
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("startDate", startDate);
+        response.put("endDate", endDate);
+        response.put("dataCount", data.size());
+        response.put("data", data);
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法獲取數據: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -126,21 +114,16 @@ public class FinMindController {
             @RequestParam(name = "date") String date,
             @RequestParam(name = "retries", defaultValue = "3") int retries) {
 
-        try {
-            List<FinMindChipData> data = finMindClient.fetchChipDataWithRetry(symbol, date, retries);
+        List<FinMindChipData> data = finMindClient.fetchChipDataWithRetry(symbol, date, retries);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("date", date);
-            response.put("retries", retries);
-            response.put("dataCount", data.size());
-            response.put("data", data);
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("date", date);
+        response.put("retries", retries);
+        response.put("dataCount", data.size());
+        response.put("data", data);
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法獲取數據: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -151,19 +134,14 @@ public class FinMindController {
      */
     @GetMapping("/chip-score")
     public ResponseEntity<?> getChipConcentrationScore(@RequestParam(name = "symbol") String symbol) {
-        try {
-            int score = enhancedInstitutionalService.calculateChipConcentrationScore(symbol);
+        int score = enhancedInstitutionalService.calculateChipConcentrationScore(symbol);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("score", score);
-            response.put("interpretation", interpretScore(score));
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("score", score);
+        response.put("interpretation", interpretScore(score));
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法計算分數: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -174,13 +152,8 @@ public class FinMindController {
      */
     @GetMapping("/chip-trend")
     public ResponseEntity<?> analyzeChipTrend(@RequestParam(name = "symbol") String symbol) {
-        try {
-            Object analysis = enhancedInstitutionalService.analyzeChipTrend(symbol);
-            return ResponseEntity.ok(analysis);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法分析趨勢: " + e.getMessage()));
-        }
+        Object analysis = enhancedInstitutionalService.analyzeChipTrend(symbol);
+        return ResponseEntity.ok(analysis);
     }
 
     /**
@@ -195,21 +168,16 @@ public class FinMindController {
             @RequestParam(name = "symbol") String symbol,
             @RequestParam(name = "days", defaultValue = "10") int days) {
 
-        try {
-            List<InstitutionalTrade> data =
-                    enhancedInstitutionalService.getInstitutionalDataWithFallback(symbol, days);
+        List<InstitutionalTrade> data =
+                enhancedInstitutionalService.getInstitutionalDataWithFallback(symbol, days);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("symbol", symbol);
-            response.put("days", days);
-            response.put("dataCount", data.size());
-            response.put("data", data);
+        Map<String, Object> response = new HashMap<>();
+        response.put("symbol", symbol);
+        response.put("days", days);
+        response.put("dataCount", data.size());
+        response.put("data", data);
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(Map.of("error", "無法獲取機構數據: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(response);
     }
 
     // ── 輔助方法 ──────────────────────────────────────────
