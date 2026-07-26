@@ -7,6 +7,14 @@ import java.util.List;
 
 @Service
 public class DivergenceService {
+    private final StockDataRepository stockDataRepository;
+    private final IndicatorCalculator indicatorCalculator;
+
+    public DivergenceService(StockDataRepository stockDataRepository,
+                             IndicatorCalculator indicatorCalculator) {
+        this.stockDataRepository = stockDataRepository;
+        this.indicatorCalculator = indicatorCalculator;
+    }
 
     /**
      * 偵測 RSI 與價格的背離
@@ -14,7 +22,7 @@ public class DivergenceService {
     public DivergenceResult detectRSIDivergence(String symbol) {
         int period = 14;
         int lookback = 30; // 偵測最近 30 天內的背離
-        List<StockDataPoint> history = DatabaseManager.getRecentHistory(symbol, lookback + period);
+        List<StockDataPoint> history = stockDataRepository.getRecentHistory(symbol, lookback + period);
         if (history.size() < lookback) {
             return new DivergenceResult("RSI", "無", 0, false, "資料不足");
         }
@@ -28,7 +36,7 @@ public class DivergenceService {
             // 在正式版本中，建議實作 Series 計算以提高效能
             prices.add(history.get(history.size() - 1 - i).c);
             // RSI 需要往前推 period 天
-            double rsi = IndicatorCalculator.calculateRSI(symbol, period); // 這裡簡化了，實際應計算序列
+            double rsi = indicatorCalculator.calculateRSI(symbol, period); // 這裡簡化了，實際應計算序列
             rsiValues.add(rsi);
         }
 
@@ -39,8 +47,8 @@ public class DivergenceService {
      * 偵測 MACD 與價格的背離
      */
     public DivergenceResult detectMACDDivergence(String symbol) {
-        List<MACDResult> macdSeries = IndicatorCalculator.calculateMACDSeries(symbol, 30);
-        List<StockDataPoint> history = DatabaseManager.getRecentHistory(symbol, 30);
+        List<MACDResult> macdSeries = indicatorCalculator.calculateMACDSeries(symbol, 30);
+        List<StockDataPoint> history = stockDataRepository.getRecentHistory(symbol, 30);
         
         if (macdSeries.size() < 20 || history.size() < 20) {
             return new DivergenceResult("MACD", "無", 0, false, "資料不足");

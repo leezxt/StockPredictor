@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -16,10 +15,21 @@ public class InstitutionalService {
     private static final Logger logger = Logger.getLogger(InstitutionalService.class.getName());
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     
-    private final TwseService twseService = new TwseService();
-    
-    @Autowired
-    private FinMindClient finMindClient;
+    private final TwseService twseService;
+    private final FinMindClient finMindClient;
+    private final InstitutionalDataRepository institutionalDataRepository;
+    private final StockUniverseRepository stockUniverseRepository;
+
+    public InstitutionalService(
+            TwseService twseService,
+            FinMindClient finMindClient,
+            InstitutionalDataRepository institutionalDataRepository,
+            StockUniverseRepository stockUniverseRepository) {
+        this.twseService = twseService;
+        this.finMindClient = finMindClient;
+        this.institutionalDataRepository = institutionalDataRepository;
+        this.stockUniverseRepository = stockUniverseRepository;
+    }
 
     private boolean forceFinMind = false;
 
@@ -179,7 +189,8 @@ public class InstitutionalService {
     }
 
     public List<InstitutionalTrade> getRecentInstitutionalTrades(String symbol, int days) {
-        List<InstitutionalTrade> localTrades = DatabaseManager.getRecentInstitutionalTrades(symbol, days);
+        List<InstitutionalTrade> localTrades =
+                institutionalDataRepository.getRecentInstitutionalTrades(symbol, days);
         if (!localTrades.isEmpty()) {
             return localTrades;
         }
@@ -208,8 +219,9 @@ public class InstitutionalService {
                     logger.info("✅ FinMind 成功返回 " + finmindData.size() + " 筆資料");
                     List<InstitutionalTrade> convertedTrades = convertFinMindToInternalFormat(finmindData);
                     if (!convertedTrades.isEmpty()) {
-                        DatabaseManager.saveInstitutionalTrades(symbol, convertedTrades);
-                        List<InstitutionalTrade> refreshed = DatabaseManager.getRecentInstitutionalTrades(symbol, days);
+                        institutionalDataRepository.saveInstitutionalTrades(symbol, convertedTrades);
+                        List<InstitutionalTrade> refreshed =
+                                institutionalDataRepository.getRecentInstitutionalTrades(symbol, days);
                         return refreshed.isEmpty() ? convertedTrades : refreshed;
                     }
                 }
@@ -225,8 +237,9 @@ public class InstitutionalService {
             List<InstitutionalTrade> fetchedTrades = twseService.fetchRecentInstitutionalData(symbol, fetchDays);
             if (fetchedTrades != null && !fetchedTrades.isEmpty()) {
                 logger.info("✅ TWSE 成功返回 " + fetchedTrades.size() + " 筆資料");
-                DatabaseManager.saveInstitutionalTrades(symbol, fetchedTrades);
-                List<InstitutionalTrade> refreshed = DatabaseManager.getRecentInstitutionalTrades(symbol, days);
+                institutionalDataRepository.saveInstitutionalTrades(symbol, fetchedTrades);
+                List<InstitutionalTrade> refreshed =
+                        institutionalDataRepository.getRecentInstitutionalTrades(symbol, days);
                 return refreshed.isEmpty() ? fetchedTrades : refreshed;
             }
         } catch (Exception e) {
@@ -249,8 +262,9 @@ public class InstitutionalService {
                 logger.info("✅ FinMind 成功返回 " + finmindData.size() + " 筆資料");
                 List<InstitutionalTrade> convertedTrades = convertFinMindToInternalFormat(finmindData);
                 if (!convertedTrades.isEmpty()) {
-                    DatabaseManager.saveInstitutionalTrades(symbol, convertedTrades);
-                    List<InstitutionalTrade> refreshed = DatabaseManager.getRecentInstitutionalTrades(symbol, days);
+                    institutionalDataRepository.saveInstitutionalTrades(symbol, convertedTrades);
+                    List<InstitutionalTrade> refreshed =
+                            institutionalDataRepository.getRecentInstitutionalTrades(symbol, days);
                     return refreshed.isEmpty() ? convertedTrades : refreshed;
                 }
             }
@@ -380,7 +394,8 @@ public class InstitutionalService {
             return List.of();
         }
 
-        List<FinMindShareholdingData> history = DatabaseManager.getLargeHolderShareholdingHistory(symbol, weeks);
+        List<FinMindShareholdingData> history =
+                institutionalDataRepository.getLargeHolderShareholdingHistory(symbol, weeks);
         if (history.size() >= Math.min(weeks, 4)) {
             return history;
         }
@@ -388,8 +403,8 @@ public class InstitutionalService {
         String startDate = LocalDate.now().minusWeeks(Math.max(weeks + 4, 12)).format(DATE_FORMATTER);
         List<FinMindShareholdingData> fetched = finMindClient.fetchLargeHolderShareholding(symbol, startDate);
         if (!fetched.isEmpty()) {
-            DatabaseManager.saveLargeHolderShareholding(symbol, fetched);
-            history = DatabaseManager.getLargeHolderShareholdingHistory(symbol, weeks);
+            institutionalDataRepository.saveLargeHolderShareholding(symbol, fetched);
+            history = institutionalDataRepository.getLargeHolderShareholdingHistory(symbol, weeks);
             if (history.isEmpty()) {
                 history = fetched.stream()
                         .filter(row -> row != null && row.getHoldingFactor() == 15)
@@ -406,7 +421,7 @@ public class InstitutionalService {
      * 只抓近幾週，避免重複請求過長歷史造成流量浪費。
      */
     public int refreshWeeklyLargeHolderShareholding() {
-        List<String> allSymbols = DatabaseManager.getAllSymbols();
+        List<String> allSymbols = stockUniverseRepository.getAllSymbols();
         if (allSymbols == null || allSymbols.isEmpty()) {
             return 0;
         }
@@ -423,7 +438,7 @@ public class InstitutionalService {
                 if (fetched.isEmpty()) {
                     continue;
                 }
-                savedRows += DatabaseManager.saveLargeHolderShareholding(symbol, fetched);
+                savedRows += institutionalDataRepository.saveLargeHolderShareholding(symbol, fetched);
             } catch (Exception e) {
                 logger.warning("⚠️  週更股權分散失敗 " + symbol + ": " + e.getMessage());
             }

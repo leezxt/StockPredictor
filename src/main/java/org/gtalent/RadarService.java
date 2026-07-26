@@ -22,6 +22,10 @@ public class RadarService {
     private final MarginAnalysisService marginAnalysisService;
     private final NewsReactionService newsReactionService;
     private final FinMindClient finMindClient;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+    private final InstitutionalDataRepository institutionalDataRepository;
+    private final IndicatorCalculator indicatorCalculator;
     private final Object moneyPercentileLock = new Object();
     private volatile long moneyPercentileCachedAtMs = 0L;
     private volatile MoneyDistributionSnapshot cachedMoneyDistribution = new MoneyDistributionSnapshot(List.of());
@@ -95,7 +99,11 @@ public class RadarService {
                         NoiseFilterService noiseFilterService,
                         MarginAnalysisService marginAnalysisService,
                         NewsReactionService newsReactionService,
-                        FinMindClient finMindClient) {
+                        FinMindClient finMindClient,
+                        StockUniverseRepository stockUniverseRepository,
+                        StockDataRepository stockDataRepository,
+                        InstitutionalDataRepository institutionalDataRepository,
+                        IndicatorCalculator indicatorCalculator) {
         this.scoreEngine = scoreEngine;
         this.institutionalService = institutionalService;
         this.marketBreadthService = marketBreadthService;
@@ -106,6 +114,10 @@ public class RadarService {
         this.marginAnalysisService = marginAnalysisService;
         this.newsReactionService = newsReactionService;
         this.finMindClient = finMindClient;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+        this.institutionalDataRepository = institutionalDataRepository;
+        this.indicatorCalculator = indicatorCalculator;
     }
 
     public RadarScoreResult calculateRadarScores(String symbol) {
@@ -117,7 +129,7 @@ public class RadarService {
         }
 
         String cleanSymbol = symbol.trim();
-        StockUniverseEntry universeEntry = DatabaseManager.getStockUniverseEntry(cleanSymbol);
+        StockUniverseEntry universeEntry = stockUniverseRepository.getStockUniverseEntry(cleanSymbol);
         result.assetType = resolveAssetType(universeEntry);
         result.market = universeEntry == null ? "" : universeEntry.getMarket();
         result.etfMode = isEtfSymbol(cleanSymbol);
@@ -125,19 +137,19 @@ public class RadarService {
         result.strategyMode = baseProfile.strategyMode();
         result.strategyDescription = baseProfile.strategyDescription();
 
-        double price = DatabaseManager.getLatestPrice(cleanSymbol);
-        double ma5 = DatabaseManager.calculateMA(cleanSymbol, 5);
-        double ma10 = DatabaseManager.calculateMA(cleanSymbol, 10);
-        double ma20 = DatabaseManager.calculateMA(cleanSymbol, 20);
-        double ma60 = DatabaseManager.calculateMA(cleanSymbol, 60);
+        double price = stockDataRepository.getLatestPrice(cleanSymbol);
+        double ma5 = stockDataRepository.calculateMA(cleanSymbol, 5);
+        double ma10 = stockDataRepository.calculateMA(cleanSymbol, 10);
+        double ma20 = stockDataRepository.calculateMA(cleanSymbol, 20);
+        double ma60 = stockDataRepository.calculateMA(cleanSymbol, 60);
         result.trend = scoreEngine.scoreTrend(price, ma5, ma10, ma20, ma60);
 
-        double rsi = IndicatorCalculator.calculateRSI(cleanSymbol, 14);
-        List<MACDResult> macdSeries = IndicatorCalculator.calculateMACDSeries(cleanSymbol, 3);
+        double rsi = indicatorCalculator.calculateRSI(cleanSymbol, 14);
+        List<MACDResult> macdSeries = indicatorCalculator.calculateMACDSeries(cleanSymbol, 3);
         double macdHist = macdSeries.isEmpty() ? 0.0 : macdSeries.get(macdSeries.size() - 1).histogram;
         double macdHistPrev = macdSeries.size() >= 2 ? macdSeries.get(macdSeries.size() - 2).histogram : macdHist;
 
-        List<KDResult> kdSeries = IndicatorCalculator.calculateKD(cleanSymbol, 3);
+        List<KDResult> kdSeries = indicatorCalculator.calculateKD(cleanSymbol, 3);
         KDResult lastKd = kdSeries.isEmpty() ? null : kdSeries.get(kdSeries.size() - 1);
         KDResult prevKd = kdSeries.size() >= 2 ? kdSeries.get(kdSeries.size() - 2) : lastKd;
         double k = lastKd == null ? 50.0 : lastKd.getK();
@@ -241,7 +253,7 @@ public class RadarService {
         result.moneySource.moneyPercentile = snapshot.percentileRank(result.money);
         result.moneySource.moneyPercentileSampleSize = snapshot.size();
 
-        List<Double> bbwSeries = IndicatorCalculator.calculateBBWSeries(cleanSymbol, 60);
+        List<Double> bbwSeries = indicatorCalculator.calculateBBWSeries(cleanSymbol, 60);
         double bbw = bbwSeries.isEmpty() ? 0.0 : bbwSeries.get(bbwSeries.size() - 1);
         double bbwPrev = bbwSeries.size() >= 2 ? bbwSeries.get(bbwSeries.size() - 2) : bbw;
         double bbwMin = bbwSeries.isEmpty() ? 0.0 : bbwSeries.stream().mapToDouble(v -> v).min().orElse(0.0);
@@ -377,7 +389,7 @@ public class RadarService {
     }
 
     private MoneyDistributionSnapshot buildMoneyDistributionSnapshot() {
-        List<String> symbols = DatabaseManager.getAllSymbols();
+        List<String> symbols = stockUniverseRepository.getAllSymbols();
         if (symbols == null || symbols.isEmpty()) {
             return new MoneyDistributionSnapshot(List.of());
         }
@@ -397,7 +409,8 @@ public class RadarService {
     }
 
     private int calculateLocalFusedMoneyScore(String symbol) {
-        List<InstitutionalTrade> trades = DatabaseManager.getRecentInstitutionalTrades(symbol, 10);
+        List<InstitutionalTrade> trades =
+                institutionalDataRepository.getRecentInstitutionalTrades(symbol, 10);
         if (trades.isEmpty()) {
             return -1;
         }
@@ -424,7 +437,8 @@ public class RadarService {
                 .average()
                 .orElse(0.0);
 
-        List<FinMindShareholdingData> holderHistory = DatabaseManager.getLargeHolderShareholdingHistory(symbol, 8);
+        List<FinMindShareholdingData> holderHistory =
+                institutionalDataRepository.getLargeHolderShareholdingHistory(symbol, 8);
         int bigHolderScore = institutionalService.calculateBigHolderScore(holderHistory);
 
         return scoreEngine.scoreMoney(trustDays, lockRatioPct, latestNetBuy, avgNetBuy5, bigHolderScore);
@@ -528,7 +542,7 @@ public class RadarService {
             return false;
         }
         String clean = symbol.trim();
-        StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(clean);
+        StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(clean);
         if (entry != null) {
             return entry.isEtf() || "BOND_ETF".equalsIgnoreCase(entry.getAssetType()) || "ETN".equalsIgnoreCase(entry.getAssetType());
         }

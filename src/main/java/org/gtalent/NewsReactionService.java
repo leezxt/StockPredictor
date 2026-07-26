@@ -61,10 +61,16 @@ public class NewsReactionService {
 
     private final FinMindClient finMindClient;
     private final DayTradingService dayTradingService;
+    private final StockDataRepository stockDataRepository;
 
-    public NewsReactionService(FinMindClient finMindClient, DayTradingService dayTradingService) {
+    public NewsReactionService(
+            FinMindClient finMindClient,
+            DayTradingService dayTradingService,
+            StockDataRepository stockDataRepository
+    ) {
         this.finMindClient = finMindClient;
         this.dayTradingService = dayTradingService;
+        this.stockDataRepository = stockDataRepository;
     }
 
     /**
@@ -221,7 +227,7 @@ public class NewsReactionService {
     }
 
     private double resolveTodayReturn(String symbol) {
-        List<StockDataPoint> history = DatabaseManager.getFullHistory(symbol, 2);
+        List<StockDataPoint> history = stockDataRepository.getFullHistory(symbol, 2);
         if (history.isEmpty()) {
             return 0.0;
         }

@@ -6,7 +6,7 @@ StockPredictor 是一個台股分析工具，提供股價走勢、K 線、KD 動
 
 - 後端：Java 17、Spring Boot 3、REST API
 - 前端：HTML、CSS、JavaScript 靜態頁面
-- 資料庫：H2 embedded database，schema 由 `DatabaseManager` 管理
+- 資料庫：H2 embedded database，schema 由 Flyway／`DatabaseSchemaInitializer` 管理
 - 建置：Maven
 - 部署：Docker / Docker Compose，支援 `linux/amd64` 與 `linux/arm64`
 
@@ -18,7 +18,7 @@ StockPredictor is a Taiwan stock analysis tool with price charts, candlestick vi
 
 - Backend: Java 17, Spring Boot 3, REST APIs
 - Frontend: static HTML, CSS, and JavaScript
-- Database: H2 embedded database, with schema managed by `DatabaseManager`
+- Database: H2 embedded database, with schema managed by Flyway and `DatabaseSchemaInitializer`
 - Build: Maven
 - Deployment: Docker / Docker Compose, supporting `linux/amd64` and `linux/arm64`
 

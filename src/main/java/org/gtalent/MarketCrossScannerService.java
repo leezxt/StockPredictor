@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.gtalent.dto.RadarConfigDto;
 import org.gtalent.dto.FinMindNavData;
@@ -47,17 +46,29 @@ public class MarketCrossScannerService {
     /** 財報查詢起始日期（涵蓋前季 Q4 與本季 Q1，與 StrategyController 一致） */
     private static final String FINANCIAL_QUERY_START_DATE = "2025-10-01";
 
-    @Autowired
-    private AdvancedFundamentalService advancedFundamentalService;
+    private final AdvancedFundamentalService advancedFundamentalService;
+    private final MarginAnalysisService marginAnalysisService;
+    private final KdAdvancedService kdAdvancedService;
+    private final FinMindClient finMindClient;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+    private final IndicatorCalculator indicatorCalculator;
 
-    @Autowired
-    private MarginAnalysisService marginAnalysisService;
-
-    @Autowired
-    private KdAdvancedService kdAdvancedService;
-
-    @Autowired
-    private FinMindClient finMindClient;
+    public MarketCrossScannerService(AdvancedFundamentalService advancedFundamentalService,
+                                     MarginAnalysisService marginAnalysisService,
+                                     KdAdvancedService kdAdvancedService,
+                                     FinMindClient finMindClient,
+                                     StockUniverseRepository stockUniverseRepository,
+                                     StockDataRepository stockDataRepository,
+                                     IndicatorCalculator indicatorCalculator) {
+        this.advancedFundamentalService = advancedFundamentalService;
+        this.marginAnalysisService = marginAnalysisService;
+        this.kdAdvancedService = kdAdvancedService;
+        this.finMindClient = finMindClient;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+        this.indicatorCalculator = indicatorCalculator;
+    }
 
     // ════════════════════════════════════════════════════════════
     //  主要 API
@@ -176,7 +187,8 @@ public class MarketCrossScannerService {
         StockDiagnosticResult result = new StockDiagnosticResult(symbol);
         result.setIsEtf(true);
 
-        double discountPremiumRatio = priceInfo.getDiscountPremiumRatio();
+        double discountPremiumRatio =
+                priceInfo.isNavAvailable() ? priceInfo.getDiscountPremiumRatio() : 0.0;
         result.setPremium(discountPremiumRatio * 100.0);
         result.setNavAvailable(priceInfo.isNavAvailable());
         result.setNavSource(priceInfo.getNavSource());
@@ -215,7 +227,7 @@ public class MarketCrossScannerService {
     // ════════════════════════════════════════════════════════════
 
     private boolean resolveIsEtf(String symbol) {
-        StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(symbol);
+        StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(symbol);
         if (entry != null) {
             return entry.isEtf()
                     || "BOND_ETF".equalsIgnoreCase(entry.getAssetType())
@@ -225,9 +237,9 @@ public class MarketCrossScannerService {
     }
 
     private StockPriceInfo buildPriceInfo(String symbol, boolean isEtf) {
-        double currentPrice = DatabaseManager.getLatestPrice(symbol);
+        double currentPrice = stockDataRepository.getLatestPrice(symbol);
 
-        List<StockDataPoint> history = DatabaseManager.getFullHistory(symbol, 252);
+        List<StockDataPoint> history = stockDataRepository.getFullHistory(symbol, 252);
         double yearHigh = 0.0;
         double yearLow = Double.MAX_VALUE;
         for (StockDataPoint p : history) {
@@ -274,14 +286,7 @@ public class MarketCrossScannerService {
                 return null;
             }
 
-            Double latestNav = null;
-            for (int i = navList.size() - 1; i >= 0; i--) {
-                double nav = navList.get(i).getNav();
-                if (nav > 0) {
-                    latestNav = nav;
-                    break;
-                }
-            }
+            Double latestNav = findLatestValidNav(navList);
             if (latestNav == null || latestNav <= 0) {
                 return null;
             }
@@ -292,12 +297,25 @@ public class MarketCrossScannerService {
         }
     }
 
+    private Double findLatestValidNav(List<FinMindNavData> navList) {
+        if (navList == null) {
+            return null;
+        }
+        for (int i = navList.size() - 1; i >= 0; i--) {
+            double nav = navList.get(i).getNav();
+            if (nav > 0) {
+                return nav;
+            }
+        }
+        return null;
+    }
+
     private List<KdData> buildKdHistory(String symbol, int limit) {
-        List<KDResult> kdSeries = IndicatorCalculator.calculateKD(symbol, limit);
+        List<KDResult> kdSeries = indicatorCalculator.calculateKD(symbol, limit);
         if (kdSeries == null || kdSeries.isEmpty()) {
             return Collections.emptyList();
         }
-        List<Double> closes = DatabaseManager.getRecentHistory(symbol, limit).stream()
+        List<Double> closes = stockDataRepository.getRecentHistory(symbol, limit).stream()
                 .map(dp -> dp.c > 0 ? dp.c : dp.price)
                 .collect(Collectors.toList());
 
@@ -372,34 +390,32 @@ public class MarketCrossScannerService {
         dto.setSymbol(symbol);
         dto.setEtf(true);
 
-        // 1. 從 FinMind API 獲取最新的 ETF 淨值資料 (TaiwanETFNavigation Dataset)
-        //    使用前一日日期確保有有效淨值數據
-        String navQueryDate = "2026-05-27"; // 應該用 LocalDate.now().minusDays(1)
+        // 查詢足以涵蓋連續假期的近期區間，避免固定日期隨時間失效。
+        String navQueryDate = LocalDate.now().minusDays(45).toString();
         List<FinMindNavData> navList = finMindClient.fetchNavData(symbol, navQueryDate);
 
         if (navList != null && !navList.isEmpty()) {
-            // 取得最新一日的淨值
-            double latestNav = navList.get(navList.size() - 1).getNav();
+            Double latestNav = findLatestValidNav(navList);
 
-            // 2. 核心量化公式：計算折溢價 (Premium / Discount)
-            // 折溢價比例 = (市價 - 淨值) / 淨值 * 100
-            // 負值表折價，正值表溢價
-            double premiumRatio = ((currentPrice - latestNav) / latestNav) * 100;
+            if (latestNav != null) {
+                // 折溢價比例 = (市價 - 淨值) / 淨值 * 100
+                double premiumRatio = ((currentPrice - latestNav) / latestNav) * 100;
 
-            // 3. 填充 DTO 回傳給前端 dashboard.html
-            dto.setNetAssetValue(latestNav);
-            dto.setPremium(premiumRatio);
-            dto.setNetAssetValueSource("FinMind / 臺灣證券交易所");
+                dto.setNetAssetValue(latestNav);
+                dto.setPremium(premiumRatio);
+                dto.setNetAssetValueSource("FinMind / 臺灣證券交易所");
 
-            logger.fine(String.format("ETF %s - Market: %.2f | NAV: %.2f | Premium: %.2f%%",
-                    symbol, currentPrice, latestNav, premiumRatio));
-        } else {
-            // 防禦降級處理：淨值資料不可得
-            dto.setNetAssetValue(0);
-            dto.setPremium(0);
-            dto.setNetAssetValueSource("NOT_AVAILABLE");
-            logger.warning("⚠️ ETF " + symbol + " 無法取得淨值資料");
+                logger.fine(String.format("ETF %s - Market: %.2f | NAV: %.2f | Premium: %.2f%%",
+                        symbol, currentPrice, latestNav, premiumRatio));
+                return dto;
+            }
         }
+
+        // 防禦降級處理：淨值資料不可得或全部無效
+        dto.setNetAssetValue(0);
+        dto.setPremium(0);
+        dto.setNetAssetValueSource("NOT_AVAILABLE");
+        logger.warning("⚠️ ETF " + symbol + " 無法取得淨值資料");
 
         return dto;
     }

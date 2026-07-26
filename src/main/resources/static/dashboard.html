@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockPredictor 雷達診斷儀表板</title>
+    <style>
+        :root {
+            --bg: #0a1018;
+            --panel: #111b28;
+            --panel-2: #162334;
+            --line: #2b3d55;
+            --text: #eef4fb;
+            --muted: #98a9bd;
+            --blue: #4f8df7;
+            --cyan: #42d5cf;
+            --green: #37c986;
+            --amber: #f2b84b;
+            --red: #f06472;
+            --radius: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Noto Sans TC", "Microsoft JhengHei", "Segoe UI", Arial, sans-serif;
+            letter-spacing: 0;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--panel-2);
+            color: var(--text);
+            min-height: 40px;
+            padding: 0 14px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: var(--cyan);
+            color: #dffbff;
+        }
+
+        button:disabled {
+            opacity: .65;
+            cursor: progress;
+        }
+
+        input {
+            width: 100%;
+            min-height: 40px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: #0e1724;
+            color: var(--text);
+            padding: 9px 12px;
+        }
+
+        .app {
+            width: min(1280px, calc(100vw - 32px));
+            margin: 0 auto;
+            padding: 22px 0 32px;
+        }
+
+        .topbar {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 26px;
+            line-height: 1.15;
+        }
+
+        .brand span {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .nav {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .nav a {
+            display: inline-flex;
+            align-items: center;
+            min-height: 36px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            color: var(--text);
+            text-decoration: none;
+            background: #0e1724;
+            font-size: 13px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--panel);
+        }
+
+        .control-panel {
+            display: grid;
+            grid-template-columns: minmax(180px, 280px) auto 1fr;
+            gap: 10px;
+            align-items: center;
+            padding: 14px;
+            margin-bottom: 14px;
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status.error {
+            color: var(--red);
+        }
+
+        .status.ok {
+            color: var(--green);
+        }
+
+        .radar-layout {
+            display: grid;
+            grid-template-columns: minmax(420px, 1.2fr) minmax(320px, .8fr);
+            gap: 14px;
+        }
+
+        .radar-main {
+            position: relative;
+            min-height: 560px;
+            padding: 16px;
+        }
+
+        .radar-head {
+            display: flex;
+            align-items: start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .radar-title {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .radar-subtitle {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .score-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 88px;
+            min-height: 34px;
+            padding: 0 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: #0e1724;
+            font-weight: 800;
+        }
+
+        .radar-wrap {
+            position: relative;
+            height: 480px;
+            margin-top: 6px;
+        }
+
+        .radar-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            overflow: visible;
+        }
+
+        .grid-ring {
+            fill: none;
+            stroke: rgba(151, 171, 197, .22);
+            stroke-width: 1;
+        }
+
+        .axis-line {
+            stroke: rgba(151, 171, 197, .24);
+            stroke-width: 1;
+        }
+
+        .radar-area {
+            fill: rgba(66, 213, 207, .22);
+            stroke: var(--cyan);
+            stroke-width: 3;
+            filter: drop-shadow(0 0 10px rgba(66, 213, 207, .2));
+        }
+
+        .axis-label {
+            fill: var(--text);
+            font-size: 13px;
+            font-weight: 700;
+            text-anchor: middle;
+        }
+
+        .axis-score {
+            fill: var(--muted);
+            font-size: 12px;
+            text-anchor: middle;
+        }
+
+        .vertex {
+            fill: var(--cyan);
+            stroke: #ecffff;
+            stroke-width: 2;
+            cursor: pointer;
+        }
+
+        .vertex:hover {
+            fill: var(--green);
+        }
+
+        .empty-state {
+            min-height: 520px;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            text-align: center;
+            line-height: 1.7;
+        }
+
+        .side-stack {
+            display: grid;
+            gap: 14px;
+        }
+
+        .summary-card,
+        .cross-card {
+            padding: 16px;
+        }
+
+        .summary-title,
+        .cross-title {
+            margin: 0 0 10px;
+            font-size: 18px;
+        }
+
+        .summary-text,
+        .cross-desc {
+            color: #d6e2ef;
+            line-height: 1.65;
+            margin: 0;
+        }
+
+        .metrics {
+            display: grid;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 9px 10px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: #0e1724;
+            color: var(--muted);
+        }
+
+        .metric strong {
+            color: var(--text);
+        }
+
+        .tag-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: #0e1724;
+            color: var(--text);
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .etf-card {
+            border-color: rgba(79, 141, 247, .65);
+            background: linear-gradient(180deg, rgba(79, 141, 247, .16), rgba(17, 27, 40, 1));
+        }
+
+        .stock-card {
+            border-color: rgba(242, 184, 75, .68);
+            background: linear-gradient(180deg, rgba(242, 184, 75, .13), rgba(17, 27, 40, 1));
+        }
+
+        .skip-card {
+            border-color: rgba(151, 171, 197, .5);
+            background: linear-gradient(180deg, rgba(151, 171, 197, .1), rgba(17, 27, 40, 1));
+        }
+
+        .perfect {
+            box-shadow: 0 0 0 1px rgba(55, 201, 134, .25), 0 0 24px rgba(55, 201, 134, .12);
+        }
+
+        .text-success {
+            color: var(--green);
+        }
+
+        .text-danger {
+            color: var(--red);
+        }
+
+        .text-warning {
+            color: var(--amber);
+        }
+
+        .tooltip {
+            position: fixed;
+            z-index: 20;
+            width: min(360px, calc(100vw - 24px));
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: #0b1320;
+            color: var(--text);
+            box-shadow: 0 18px 36px rgba(0, 0, 0, .32);
+            pointer-events: none;
+            display: none;
+        }
+
+        .tooltip.active {
+            display: block;
+        }
+
+        .tooltip h3 {
+            margin: 0 0 8px;
+            font-size: 15px;
+        }
+
+        .tooltip p {
+            margin: 0 0 8px;
+            color: #d8e3f0;
+            line-height: 1.55;
+            font-size: 13px;
+        }
+
+        .tooltip table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .tooltip td {
+            padding: 5px 0;
+            border-top: 1px solid rgba(151, 171, 197, .18);
+        }
+
+        .tooltip td:last-child {
+            color: var(--text);
+            text-align: right;
+        }
+
+        @media (max-width: 980px) {
+            .topbar,
+            .control-panel,
+            .radar-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .radar-main {
+                min-height: auto;
+            }
+
+            .radar-wrap {
+                height: 420px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .app {
+                width: min(100vw - 20px, 1280px);
+                padding-top: 12px;
+            }
+
+            .radar-wrap {
+                height: 360px;
+            }
+
+            .brand h1 {
+                font-size: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main class="app">
+    <header class="topbar">
+        <div class="brand">
+            <h1>StockPredictor 雷達診斷儀表板</h1>
+            <span>六維雷達圖 · ETF / 個股自動分流 · 低基期交叉測試</span>
+        </div>
+        <nav class="nav" aria-label="頁面導覽">
+            <a href="index.html">經典介面</a>
+            <a href="chart.html">走勢圖</a>
+            <a href="kd-advanced-analysis.html">KD 分析</a>
+        </nav>
+    </header>
+
+    <section class="panel control-panel">
+        <input id="symbolInput" value="2330" inputmode="numeric" autocomplete="off" aria-label="股票代號">
+        <button id="analyzeButton" type="button">分析</button>
+        <div id="status" class="status">輸入台股代號後分析，例如 2330、0050、2049。</div>
+    </section>
+
+    <section class="radar-layout">
+        <section class="panel radar-main">
+            <div class="radar-head">
+                <div>
+                    <h2 id="radarTitle" class="radar-title">尚未載入雷達資料</h2>
+                    <p id="radarSubtitle" class="radar-subtitle">按下分析後會顯示六維評估分數。</p>
+                </div>
+                <div id="totalScore" class="score-pill">--</div>
+            </div>
+            <div id="radarWrap" class="radar-wrap">
+                <div class="empty-state">等待分析資料</div>
+            </div>
+        </section>
+
+        <aside class="side-stack">
+            <section id="summaryCard" class="panel summary-card">
+                <h2 class="summary-title">綜合結論</h2>
+                <p class="summary-text">尚未分析。</p>
+            </section>
+            <section id="crossCard" class="panel cross-card skip-card">
+                <h2 class="cross-title">自動分流診斷</h2>
+                <p class="cross-desc">等待 ETF / 個股身份判定。</p>
+            </section>
+        </aside>
+    </section>
+</main>
+
+<div id="tooltip" class="tooltip" role="tooltip"></div>
+
+<script>
+    const DIMENSIONS = [
+        { key: "trend", label: "趨勢" },
+        { key: "momentum", label: "動能" },
+        { key: "money", label: "籌碼" },
+        { key: "volatility", label: "波動" },
+        { key: "context", label: "環境" },
+        { key: "fundamental", label: "營收" }
+    ];
+
+    const tooltip = document.getElementById("tooltip");
+
+    document.getElementById("analyzeButton").addEventListener("click", analyze);
+    document.getElementById("symbolInput").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") analyze();
+    });
+
+    window.addEventListener("DOMContentLoaded", analyze);
+
+    async function analyze() {
+        const symbol = document.getElementById("symbolInput").value.trim();
+        const button = document.getElementById("analyzeButton");
+        const status = document.getElementById("status");
+        if (!symbol) {
+            setStatus("請輸入股票代號。", true);
+            return;
+        }
+
+        button.disabled = true;
+        setStatus(`正在分析 ${symbol}...`, false);
+
+        try {
+            const [radarResponse, crossResponse] = await Promise.all([
+                fetch(`/api/stocks/${encodeURIComponent(symbol)}/radar`),
+                fetch(`/api/cross/${encodeURIComponent(symbol)}`).catch(() => null)
+            ]);
+
+            if (!radarResponse.ok) {
+                throw new Error(`雷達 API 回應 HTTP ${radarResponse.status}`);
+            }
+
+            const radar = await radarResponse.json();
+            const cross = crossResponse && crossResponse.ok ? await crossResponse.json() : null;
+
+            renderRadar(symbol, radar);
+            renderSummary(radar);
+            renderCrossTestCard(cross || { symbol, reason: "交叉診斷 API 暫時無法取得。" });
+            setStatus(`${symbol} 分析完成。`, false, true);
+        } catch (error) {
+            setStatus(`分析失敗：${error.message}`, true);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function renderRadar(symbol, data) {
+        const wrap = document.getElementById("radarWrap");
+        const width = 520;
+        const height = 440;
+        const cx = width / 2;
+        const cy = height / 2 + 8;
+        const radius = 150;
+        const points = DIMENSIONS.map((dim, index) => {
+            const angle = -Math.PI / 2 + index * Math.PI * 2 / DIMENSIONS.length;
+            const score = clampNumber(data[dim.key], 0, 100);
+            return {
+                ...dim,
+                score,
+                x: cx + Math.cos(angle) * radius * score / 100,
+                y: cy + Math.sin(angle) * radius * score / 100,
+                lx: cx + Math.cos(angle) * (radius + 42),
+                ly: cy + Math.sin(angle) * (radius + 42),
+                sx: cx + Math.cos(angle) * (radius + 22),
+                sy: cy + Math.sin(angle) * (radius + 22)
+            };
+        });
+        const polygon = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+        const rings = [20, 40, 60, 80, 100].map(level => {
+            const ringPoints = DIMENSIONS.map((_, index) => {
+                const angle = -Math.PI / 2 + index * Math.PI * 2 / DIMENSIONS.length;
+                const r = radius * level / 100;
+                return `${(cx + Math.cos(angle) * r).toFixed(1)},${(cy + Math.sin(angle) * r).toFixed(1)}`;
+            }).join(" ");
+            return `<polygon class="grid-ring" points="${ringPoints}"></polygon>`;
+        }).join("");
+
+        const axes = points.map(p => `
+            <line class="axis-line" x1="${cx}" y1="${cy}" x2="${p.lx}" y2="${p.ly}"></line>
+            <text class="axis-label" x="${p.lx}" y="${p.ly}">${p.label}</text>
+            <text class="axis-score" x="${p.sx}" y="${p.sy + 16}">${p.score}</text>
+        `).join("");
+
+        const vertices = points.map(p => `
+            <circle class="vertex" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="7"
+                    data-key="${p.key}" data-label="${p.label}" data-score="${p.score}"></circle>
+        `).join("");
+
+        wrap.innerHTML = `
+            <svg class="radar-svg" viewBox="0 0 ${width} ${height}" aria-label="${escapeHtml(symbol)} 六維雷達圖">
+                ${rings}
+                ${axes}
+                <polygon class="radar-area" points="${polygon}"></polygon>
+                ${vertices}
+            </svg>
+        `;
+
+        wrap.querySelectorAll(".vertex").forEach(node => {
+            node.addEventListener("mousemove", event => {
+                const key = node.dataset.key;
+                const label = node.dataset.label;
+                const score = Number(node.dataset.score);
+                showTooltip(event, buildTooltip(label, key, score, data));
+            });
+            node.addEventListener("mouseleave", hideTooltip);
+        });
+
+        document.getElementById("radarTitle").textContent = `${symbol} 六維雷達`;
+        document.getElementById("radarSubtitle").textContent = `${data.strategyMode || "標準雷達"} · ${data.assetType || "UNKNOWN"} · ${data.market || ""}`;
+        document.getElementById("totalScore").textContent = `總分 ${clampNumber(data.totalScore, 0, 100)}`;
+    }
+
+    function renderSummary(data) {
+        const card = document.getElementById("summaryCard");
+        card.innerHTML = `
+            <h2 class="summary-title">綜合結論</h2>
+            <div class="metrics">
+                <div class="metric"><span>標籤</span><strong>${escapeHtml(data.label || "--")}</strong></div>
+                <div class="metric"><span>策略模式</span><strong>${escapeHtml(data.strategyMode || "--")}</strong></div>
+                <div class="metric"><span>消息面</span><strong>${escapeHtml(formatScore(data.news))}</strong></div>
+            </div>
+            <p class="summary-text">${escapeHtml(data.conclusion || "暫無結論。")}</p>
+        `;
+    }
+
+    function renderCrossTestCard(data) {
+        const card = document.getElementById("crossCard");
+        const symbol = escapeHtml(data.symbol || "--");
+        const tag = escapeHtml(data.strategyTag || (data.skip ? "條件略過" : "條件未達"));
+        const reason = escapeHtml(data.reason || "基本面、籌碼面與技術面仍需等待更明確的共振訊號。");
+        const perfectClass = data.perfectMatch ? " perfect" : "";
+
+        if (data.etf) {
+            const premium = Number(data.premium || 0);
+            const hasNav = Boolean(data.navAvailable);
+            const premiumTone = !hasNav ? "text-warning" : premium < 0 ? "text-success" : "text-danger";
+            const premiumText = hasNav ? `${premium.toFixed(2)}%` : "—（淨值資料未接入）";
+            card.className = `panel cross-card etf-card${perfectClass}`;
+            card.innerHTML = `
+                <h2 class="cross-title">ETF 專屬診斷：${symbol}</h2>
+                <div class="tag-badge">${tag}</div>
+                <div class="metrics">
+                    <div class="metric"><span>現價折溢價</span><strong class="${premiumTone}">${premiumText}</strong></div>
+                    <div class="metric"><span>淨值來源</span><strong>${escapeHtml(data.navSource || "NOT_AVAILABLE")}</strong></div>
+                    <div class="metric"><span>訊號狀態</span><strong class="${data.perfectMatch ? "text-success" : "text-warning"}">${data.perfectMatch ? "完美訊號" : "觀察中"}</strong></div>
+                </div>
+                <p class="cross-desc">ETF 不受單一個股財報影響，判定重點改看折溢價與 KD 低檔轉折。目前指標顯示：${tag}，適合中長線防禦型資金檢視。</p>
+            `;
+            return;
+        }
+
+        const position = Number(data.currentPosition || 0);
+        const positionPct = position > 0 ? `${(position * 100).toFixed(1)}%` : "—";
+        const positionTone = position > 0 && position <= 0.25 ? "text-success" : position <= 0.40 ? "text-warning" : "text-danger";
+        card.className = `panel cross-card ${data.skip ? "skip-card" : "stock-card"}${perfectClass}`;
+        card.innerHTML = `
+            <h2 class="cross-title">個股基期檢驗：${symbol}</h2>
+            <div class="tag-badge">${tag}</div>
+            <div class="metrics">
+                <div class="metric"><span>52 週相對位置</span><strong class="${positionTone}">${positionPct}</strong></div>
+                <div class="metric"><span>最終分數</span><strong>${Number(data.finalScore || 0)}</strong></div>
+                <div class="metric"><span>狀態</span><strong class="${data.skip ? "text-warning" : data.perfectMatch ? "text-success" : "text-warning"}">${data.skip ? "已略過" : data.perfectMatch ? "完美匹配" : "觀察中"}</strong></div>
+            </div>
+            <p class="cross-desc">${data.skip ? reason : "低基期黑馬會優先確認價格仍在一年低位區、Q1 三率三升、融資籌碼乾淨，以及 KD 低檔背離或剛金叉。"}</p>
+        `;
+    }
+
+    function buildTooltip(label, key, score, data) {
+        const level = score >= 70 ? "強" : score >= 45 ? "中性偏可用" : "弱";
+        const notes = {
+            trend: "趨勢分數來自均線排列、價格與均線距離，以及中短期方向是否同步。",
+            momentum: "動能分數來自 RSI、MACD、KD，並會受到當沖噪音權重修正。",
+            money: "籌碼分數整合法人投信鎖碼、千張大戶，以及當沖噪音補償。",
+            volatility: "波動分數以 BBW 擠壓與擴張狀態判定，分數高代表可能進入波動釋放區。",
+            context: "環境分數來自市場廣度與大盤背景，避免單股訊號逆著整體市場硬做。",
+            fundamental: "營收分數來自月營收、三率三升、庫存與合約負債等基本面訊號。"
+        };
+
+        const rows = [];
+        if (key === "momentum") {
+            rows.push(["原始動能", formatScore(data.rawMomentum)]);
+            rows.push(["信任權重", formatPercent(data.confidenceWeight)]);
+            rows.push(["當沖率", formatPercent(data.dayTradingRate)]);
+        } else if (key === "money" && data.moneySource) {
+            rows.push(["投信連買", `${data.moneySource.trustDays ?? "--"} 天`]);
+            rows.push(["鎖碼比", `${formatNumber(data.moneySource.lockRatioPct)}%`]);
+            rows.push(["最新淨買", formatVolume(data.moneySource.latestNetBuy)]);
+        } else if (key === "fundamental" && data.fundamentalDetail) {
+            rows.push(["三率三升", data.fundamentalDetail.tripleRiseActive ? "是" : "否"]);
+            rows.push(["營收成長", data.fundamentalDetail.revenueGrowing ? "是" : "否"]);
+            rows.push(["季報完整", data.fundamentalDetail.hasQuarterData ? "是" : "否"]);
+        } else if (key === "volatility" && data.marginDetail) {
+            rows.push(["融資週趨勢", data.marginDetail.marginWeekTrend || "--"]);
+            rows.push(["資券比", `${formatNumber(data.marginDetail.shortToMarginRatioPct)}%`]);
+            rows.push(["軋空警示", data.marginDetail.shortSqueezeAlert ? "有" : "無"]);
+        }
+
+        return `
+            <h3>${escapeHtml(label)} ${score} 分 · ${level}</h3>
+            <p>${escapeHtml(notes[key] || "此維度以多項指標綜合評估。")}</p>
+            <table>${rows.map(([name, value]) => `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(String(value))}</td></tr>`).join("")}</table>
+        `;
+    }
+
+    function showTooltip(event, html) {
+        tooltip.innerHTML = html;
+        tooltip.classList.add("active");
+        const pad = 14;
+        const rect = tooltip.getBoundingClientRect();
+        let left = event.clientX + pad;
+        let top = event.clientY + pad;
+        if (left + rect.width > window.innerWidth - pad) left = event.clientX - rect.width - pad;
+        if (top + rect.height > window.innerHeight - pad) top = event.clientY - rect.height - pad;
+        tooltip.style.left = `${Math.max(pad, left)}px`;
+        tooltip.style.top = `${Math.max(pad, top)}px`;
+    }
+
+    function hideTooltip() {
+        tooltip.classList.remove("active");
+    }
+
+    function setStatus(message, failed, ok) {
+        const status = document.getElementById("status");
+        status.textContent = message;
+        status.className = `status ${failed ? "error" : ok ? "ok" : ""}`;
+    }
+
+    function clampNumber(value, min, max) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return min;
+        return Math.max(min, Math.min(max, Math.round(number)));
+    }
+
+    function formatScore(value) {
+        return Number.isFinite(Number(value)) ? String(Math.round(Number(value))) : "--";
+    }
+
+    function formatPercent(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "--";
+    }
+
+    function formatNumber(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number.toFixed(1) : "--";
+    }
+
+    function formatVolume(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return "--";
+        return Math.round(number).toLocaleString("zh-TW");
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+</script>
+</body>
+</html>

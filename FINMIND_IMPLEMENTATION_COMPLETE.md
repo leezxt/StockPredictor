@@ -1,5 +1,7 @@
 # FinMind 三率直接百分比欄位整合 - 實裝完成報告
 
+> 歷史實裝紀錄：資料存取層後續已遷移至 `FinancialDataRepository`，schema 改由 Flyway／`DatabaseSchemaInitializer` 管理。
+
 **完成日期**: 2026-05-19  
 **系統版本**: 基本面精細化評分引擎 v2.1  
 **核心改進**: FinMind 直接三率欄位識別與 DB 快取層
@@ -17,7 +19,7 @@
 | **三率直接欄位識別** | 優先識別 GrossProfitMargin / OperatingProfitMargin / NetProfitMargin，value 已是百分比，無需推算 | ✅ 完成 |
 | **DB 快取層** | 新增 FINANCIAL_QUARTER_DATA 表，避免重複打 FinMind API | ✅ 完成 |
 | **DTO 標準化** | 建立 FinMindFinancialData DTO，規範 API 回傳結構 | ✅ 完成 |
-| **快取讀寫接口** | DatabaseManager 新增 saveFinancialQuarterData() 與 getFinancialQuarterHistory() | ✅ 完成 |
+| **快取讀寫接口** | `FinancialDataRepository` 提供 saveFinancialQuarterData() 與 getFinancialQuarterHistory() | ✅ 完成 |
 | **前端 UI 整合** | 基本面 AI 洞察卡片已完整實現 7 種情境診斷 | ✅ 已在前一個 Partition 完成 |
 | **性能優化** | 首次查詢 API (~2 秒) → 快取查詢 (~0.1 秒) | ✅ 預期達成 |
 
@@ -58,7 +60,7 @@
 | 檔案 | 修改內容 | 狀態 |
 |------|--------|------|
 | `AdvancedFundamentalService.java` | 已實現三率直接欄位 priority 邏輯；DB 快取讀寫整合 | ✅ 完成 |
-| `DatabaseManager.java` (1150-1232 行) | 新增 saveFinancialQuarterData() 與 getFinancialQuarterHistory() | ✅ 完成 |
+| `FinancialDataRepository.java` | 提供 saveFinancialQuarterData() 與 getFinancialQuarterHistory() | ✅ 完成 |
 | `schema.sql` | 新增 FINANCIAL_QUARTER_DATA 表與 UNIQUE 索引 | ✅ 完成 |
 | `RadarScoreResult.java` | 新增 FundamentalDetail 靜態內部類別 | ✅ 完成 |
 | `RadarService.java` (198-212 行) | 呼叫 buildFundamentalDetail() 填充結果 | ✅ 完成 |
@@ -77,7 +79,7 @@ RadarService.calculateRadarScores(symbol)
 RadarService.getRiskScore() [第 203-211 行]
     ├─ FundamentalService.getRevenueHistoryForScoring(symbol, 6)
     ├─ AdvancedFundamentalService.getQuarterHistory(symbol, 4)
-    │  ├─ 1️⃣ 讀 DB 快取 (DatabaseManager.getFinancialQuarterHistory)
+    │  ├─ 1️⃣ 讀 DB 快取 (FinancialDataRepository.getFinancialQuarterHistory)
     │  ├─ 2️⃣ 若不足，呼叫 FinMind API
     │  │  ├─ fetchFinancialStatements() → 損益表
     │  │  └─ fetchBalanceSheet() → 資產負債表
@@ -88,7 +90,7 @@ RadarService.getRiskScore() [第 203-211 行]
     │  │  └─ NetProfitMargin (淨利率) → value 直接用 ✓
     │  ├─ 5️⃣ 若以上為 0，回退推算（Revenue/GrossProfit 等）
     │  ├─ 6️⃣ 計算存貨週轉天數 (Inventories/Revenue * DAYS_PER_QUARTER)
-    │  ├─ 7️⃣ 寫 DB 快取 (DatabaseManager.saveFinancialQuarterData)
+    │  ├─ 7️⃣ 寫 DB 快取 (FinancialDataRepository.saveFinancialQuarterData)
     │  └─ 回傳 List<FinancialQuarterData>
     │
     ├─ AdvancedFundamentalService.calculateRefinedFundamentalScore()
@@ -203,7 +205,7 @@ CREATE UNIQUE INDEX IDX_FINANCIAL_QUARTER_SYMBOL_DATE
 使用 H2 的 MERGE 語句：
 
 ```java
-// DatabaseManager.java 第 1171-1175 行
+// FinancialDataRepository.java
 String sql = "MERGE INTO FINANCIAL_QUARTER_DATA" +
     "(symbol, quarter_date, gross_profit_margin, ...)" +
     " KEY(symbol, quarter_date)" +  // 唯一鍵
@@ -283,7 +285,7 @@ String sql = "MERGE INTO FINANCIAL_QUARTER_DATA" +
 
 - `FinMindFinancialData.java` - DTO（本次新增）
 - `AdvancedFundamentalService.java` - 核心邏輯
-- `DatabaseManager.java` - 快取層
+- `FinancialDataRepository.java` - 快取層
 - `RadarService.java` - 整合入口
 - `schema.sql` - DB 初始化
 

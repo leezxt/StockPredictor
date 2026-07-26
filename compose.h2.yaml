@@ -1,0 +1,23 @@
+name: stockpredictor-h2
+
+services:
+  app:
+    image: leezxt/stockmarket:v1
+    container_name: stockpredictor-h2
+    restart: unless-stopped
+    ports:
+      - "19091:19090"
+    environment:
+      SERVER_PORT: "19090"
+      RUNNING_IN_DOCKER: "true"
+      STOCKPREDICTOR_DATA_DIR: /data
+      STOCKPREDICTOR_JDBC_URL: "jdbc:h2:file:/data/stockdb;DB_CLOSE_ON_EXIT=FALSE;AUTO_RECONNECT=TRUE"
+      APP_BROWSER_AUTO_OPEN: "false"
+      APP_SCHEDULING_ENABLED: "false"
+      FINMIND_API_TOKEN: "${FINMIND_API_TOKEN:-}"
+    volumes:
+      - stockpredictor-data:/data
+
+volumes:
+  stockpredictor-data:
+    name: stockpredictor_stockpredictor-data

@@ -6,12 +6,28 @@ import java.util.List;
 
 @Service
 public class MarketBreadthService {
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+    private final InstitutionalDataRepository institutionalDataRepository;
+    private final MarketDataRepository marketDataRepository;
+
+    public MarketBreadthService(
+            StockUniverseRepository stockUniverseRepository,
+            StockDataRepository stockDataRepository,
+            InstitutionalDataRepository institutionalDataRepository,
+            MarketDataRepository marketDataRepository
+    ) {
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+        this.institutionalDataRepository = institutionalDataRepository;
+        this.marketDataRepository = marketDataRepository;
+    }
 
     public MarketBreadthResult calculateMarketBreadth() {
-        List<String> symbols = DatabaseManager.getAllSymbols();
+        List<String> symbols = stockUniverseRepository.getAllSymbols();
         if (symbols.isEmpty()) {
             MarketBreadthResult emptyResult = new MarketBreadthResult(0.0, 0, 0);
-            DatabaseManager.saveDailyMarketBreadth(emptyResult);
+            marketDataRepository.saveDailyMarketBreadth(emptyResult);
             return emptyResult;
         }
 
@@ -28,8 +44,8 @@ public class MarketBreadthService {
                 continue;
             }
 
-            long latestVol = DatabaseManager.getLatestVolume(symbol);
-            long volMA5 = DatabaseManager.calculateVolumeMA(symbol, 5);
+            long latestVol = stockDataRepository.getLatestVolume(symbol);
+            long volMA5 = stockDataRepository.calculateVolumeMA(symbol, 5);
             long latestRealVol = getLatestRealVolumeOrRaw(symbol, latestVol);
             long realVolMA5 = getRealVolumeMA5OrRaw(symbol, volMA5);
             // Exclude extremely illiquid symbols where volume is missing or negligible
@@ -45,26 +61,26 @@ public class MarketBreadthService {
 
         if (eligibleCount == 0) {
             MarketBreadthResult emptyResult = new MarketBreadthResult(0.0, 0, 0);
-            DatabaseManager.saveDailyMarketBreadth(emptyResult);
+            marketDataRepository.saveDailyMarketBreadth(emptyResult);
             return emptyResult;
         }
 
         double breadth = (double) bullishCount / eligibleCount * 100.0;
         MarketBreadthResult result = new MarketBreadthResult(breadth, eligibleCount, bullishCount);
-        DatabaseManager.saveDailyMarketBreadth(result);
+        marketDataRepository.saveDailyMarketBreadth(result);
         return result;
     }
 
     public List<MarketBreadthSnapshot> getMarketBreadthHistory(int days) {
         int safeDays = Math.max(1, Math.min(days, 365));
         calculateMarketBreadth();
-        return DatabaseManager.getMarketBreadthHistory(safeDays);
+        return marketDataRepository.getMarketBreadthHistory(safeDays);
     }
 
     private Double[] calculateMovingAverages(String symbol) {
-        double ma5 = DatabaseManager.calculateMA(symbol, 5);
-        double ma20 = DatabaseManager.calculateMA(symbol, 20);
-        double ma60 = DatabaseManager.calculateMA(symbol, 60);
+        double ma5 = stockDataRepository.calculateMA(symbol, 5);
+        double ma20 = stockDataRepository.calculateMA(symbol, 20);
+        double ma60 = stockDataRepository.calculateMA(symbol, 60);
 
         if (ma5 == 0.0 || ma20 == 0.0 || ma60 == 0.0) {
             return null;
@@ -77,7 +93,8 @@ public class MarketBreadthService {
         if (rawLatestVolume <= 0) {
             return 0L;
         }
-        List<FinMindDayTradingData> dayTradingRows = DatabaseManager.getDayTradingHistory(symbol, 1);
+        List<FinMindDayTradingData> dayTradingRows =
+                institutionalDataRepository.getDayTradingHistory(symbol, 1);
         if (dayTradingRows.isEmpty()) {
             return rawLatestVolume;
         }
@@ -90,8 +107,9 @@ public class MarketBreadthService {
         if (rawVolMA5 <= 0) {
             return 0L;
         }
-        List<FinMindDayTradingData> dayTradingRows = DatabaseManager.getDayTradingHistory(symbol, 5);
-        List<StockDataPoint> stockRows = DatabaseManager.getFullHistory(symbol, 5);
+        List<FinMindDayTradingData> dayTradingRows =
+                institutionalDataRepository.getDayTradingHistory(symbol, 5);
+        List<StockDataPoint> stockRows = stockDataRepository.getFullHistory(symbol, 5);
         if (dayTradingRows.isEmpty() || stockRows.isEmpty()) {
             return rawVolMA5;
         }

@@ -10,6 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+    <script src="history-backfill-client.js?v=20260723"></script>
     <link rel="stylesheet" href="dark-mode.css">
     <style>
         :root {
@@ -878,7 +879,7 @@ function getApiFallbackUrl(url) {
 async function fetchWithApiFallback(url, init) {
     let primaryError = null;
     try {
-        const response = await fetch(url, init);
+        const response = await window.StockHistoryBackfill.fetch(url, init);
         if (response.status !== 404) {
             return response;
         }
@@ -891,7 +892,7 @@ async function fetchWithApiFallback(url, init) {
     if (!fallbackUrl) {
         throw primaryError;
     }
-    return fetch(fallbackUrl, init);
+    return window.StockHistoryBackfill.fetch(fallbackUrl, init);
 }
 
 async function safeJson(url) {

@@ -32,6 +32,14 @@ public class TwseService {
     private static final int MAX_CONSECUTIVE_INSTITUTIONAL_FAILURES = 6;
     private static final int DEFAULT_REQUEST_RETRIES = 2;
     private static final int INSTITUTIONAL_REQUEST_RETRIES = 3;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+
+    public TwseService(StockUniverseRepository stockUniverseRepository,
+                       StockDataRepository stockDataRepository) {
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+    }
 
     public List<StockUniverseEntry> fetchMarketUniverse() {
         Map<String, StockUniverseEntry> dedup = new LinkedHashMap<>();
@@ -45,7 +53,7 @@ public class TwseService {
         if (universe.isEmpty()) {
             return 0;
         }
-        return DatabaseManager.saveStockUniverse(universe);
+        return stockUniverseRepository.saveStockUniverse(universe);
     }
 
     private List<StockUniverseEntry> fetchTwseUniverseEntries() {
@@ -167,7 +175,7 @@ public class TwseService {
                     if (!row.isArray() || row.size() < 7) {
                         continue;
                     }
-                    // 回傳至少到收盤價(6)，供 DatabaseManager 解析日期/成交量/收盤價
+                    // 回傳至少到收盤價(6)，供 repository 匯入流程解析日期、成交量與收盤價
                     results.add(new String[]{
                             row.get(0).asText(),
                             row.get(1).asText(),
@@ -658,7 +666,7 @@ public class TwseService {
                 continue;
             }
 
-            if (DatabaseManager.saveSimpleData(stockNo, westernDate, price)) {
+            if (stockDataRepository.saveSimpleData(stockNo, westernDate, price)) {
                 count++;
             }
         }
@@ -746,7 +754,7 @@ public class TwseService {
                 String dateField = row.path("Date").asText("").trim();
                 String date = parseBulkDate(dateField, todayStr);
 
-                DatabaseManager.saveBulkOhlcvRow(code, date, open, high, low, close, vol);
+                stockDataRepository.saveBulkOhlcvRow(code, date, open, high, low, close, vol);
                 count++;
             }
         } catch (Exception e) {
@@ -800,7 +808,7 @@ public class TwseService {
                 String dateField = row.path("Date").asText("").trim();
                 String date = parseBulkDate(dateField, todayStr);
 
-                DatabaseManager.saveBulkOhlcvRow(code, date, open, high, low, close, vol);
+                stockDataRepository.saveBulkOhlcvRow(code, date, open, high, low, close, vol);
                 count++;
             }
         } catch (Exception e) {

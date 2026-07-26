@@ -1,7 +1,6 @@
 package org.gtalent;
 
 import org.gtalent.dto.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -19,20 +18,28 @@ public class SymbolProfileService {
     private final DivergenceService divergenceService;
     private final FinMindClient finMindClient;
     private final TwseService twseService;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+    private final IndicatorCalculator indicatorCalculator;
 
-    @Autowired
     public SymbolProfileService(AIPredictionService aiPredictionService,
                                 EnhancedInstitutionalService enhancedInstitutionalService,
                                 VolumeAnalysisService volumeAnalysisService,
                                 DivergenceService divergenceService,
                                 FinMindClient finMindClient,
-                                TwseService twseService) {
+                                TwseService twseService,
+                                StockUniverseRepository stockUniverseRepository,
+                                StockDataRepository stockDataRepository,
+                                IndicatorCalculator indicatorCalculator) {
         this.aiPredictionService = aiPredictionService;
         this.enhancedInstitutionalService = enhancedInstitutionalService;
         this.volumeAnalysisService = volumeAnalysisService;
         this.divergenceService = divergenceService;
         this.finMindClient = finMindClient;
         this.twseService = twseService;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+        this.indicatorCalculator = indicatorCalculator;
     }
 
     public SymbolProfileResult getProfile(String symbol) {
@@ -41,26 +48,26 @@ public class SymbolProfileService {
         result.setName(twseService.fetchStockName(symbol));
 
         // 1. 判斷資產類型
-        StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(symbol);
+        StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(symbol);
         boolean isEtf = resolveIsEtf(symbol, entry);
         result.setEtf(isEtf);
         result.setAssetType(entry != null ? entry.getAssetType() : (isEtf ? "ETF" : "STOCK"));
 
         // 2. 即時價格資訊
-        double currentPrice = DatabaseManager.getLatestPrice(symbol);
+        double currentPrice = stockDataRepository.getLatestPrice(symbol);
         result.setCurrentPrice(currentPrice);
         
         // 3. AI 預測 (Phase 4)
         result.setPrediction(aiPredictionService.predict(symbol));
 
         // 4. 高級技術指標 (Phase 1)
-        result.setBollinger(IndicatorCalculator.calculateBollinger(symbol));
-        result.setIchimoku(IndicatorCalculator.calculateIchimoku(symbol));
-        result.setVwap(IndicatorCalculator.calculateVWAP(symbol));
-        result.setRsi(IndicatorCalculator.calculateRSI(symbol, 14));
+        result.setBollinger(indicatorCalculator.calculateBollinger(symbol));
+        result.setIchimoku(indicatorCalculator.calculateIchimoku(symbol));
+        result.setVwap(indicatorCalculator.calculateVWAP(symbol));
+        result.setRsi(indicatorCalculator.calculateRSI(symbol, 14));
         
         // KD
-        List<KDResult> kdList = IndicatorCalculator.calculateKD(symbol, 1);
+        List<KDResult> kdList = indicatorCalculator.calculateKD(symbol, 1);
         if (!kdList.isEmpty()) {
             Map<String, Double> kdMap = new HashMap<>();
             kdMap.put("k", kdList.get(0).getK());
@@ -69,7 +76,7 @@ public class SymbolProfileService {
         }
 
         // MACD
-        List<MACDResult> macdList = IndicatorCalculator.calculateMACDSeries(symbol, 1);
+        List<MACDResult> macdList = indicatorCalculator.calculateMACDSeries(symbol, 1);
         if (!macdList.isEmpty()) {
             Map<String, Double> macdMap = new HashMap<>();
             macdMap.put("dif", macdList.get(0).dif);

@@ -210,19 +210,24 @@ checkTripleRiseScore(chineseTypeData) == 8 ✅
 
 ## 🚀 後續行動
 
+> 現況更新（2026-07-26）：三率核心已整合至 `AdvancedFundamentalService`、
+> `RadarService`、`MarketCrossScannerService` 與 Strategy API；以下依目前程式與測試重新校準。
+
 ### 立即可做
 
-- [ ] 單位測試 (`TripleRiseFilterTest.java`)
-- [ ] 整合測試 (Mock FinMind)
-- [ ] REST API 端點暴露 (GET /api/stock/check-triple-rise)
-- [ ] 前端中文顯示 (已實現)
+- [x] 核心單元測試（`AdvancedFundamentalServiceTest`）
+- [x] FinMind／Repository 資料取得測試（`AdvancedFundamentalServiceTest`）
+- [x] REST API 端點暴露（`GET /api/strategy/q1-black-horse` 與 `q1-black-horse-custom`）
+- [x] 前端中文顯示（`index.html`、`dashboard.html`）
 
 ### 後續優化
 
 - [ ] 支援 YoY 比較 (同年同期)
 - [ ] 連續多季趨勢分析
 - [ ] 分數分級 (8/6/4/2 分)
-- [ ] 與其他指標融合
+- [x] 與其他指標融合（Radar、跨市場低基期／融資／KD 交叉）
+
+目前 `checkTripleRiseScore()` 仍採最新兩季 QoQ 的 8／0 規則；測試已覆蓋資料取得、快取、三率全升、任一率未升、中文 type、空資料與季度不足等核心邊界。
 
 ---
 
@@ -324,7 +329,7 @@ A: 單檔 ~10ms，可支持實時查詢。大量查詢建議使用快取。
 - ✅ 測試: 案例完備，有指引
 - ✅ 性能: 快速高效，適合生產
 
-**下一步**: 編寫單元測試 + 進行實機驗證 🚀
+**下一步**: 進行實機驗證，並依產品需求評估 YoY、多季趨勢與分級計分 🚀
 
 ---
 

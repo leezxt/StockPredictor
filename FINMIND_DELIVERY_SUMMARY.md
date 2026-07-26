@@ -1,5 +1,7 @@
 # FinMind 三率直接欄位實裝 - 交付總結
 
+> 歷史交付紀錄：資料存取層後續已遷移至 `FinancialDataRepository`，schema 改由 Flyway／`DatabaseSchemaInitializer` 管理。
+
 ## 🎉 實裝完成狀態
 
 **日期**: 2026-05-19  
@@ -38,7 +40,7 @@
 | 檔案 | 前期完成 | 本期驗證 | 狀態 |
 |------|--------|---------|------|
 | AdvancedFundamentalService.java | ✅ | ✅ | 核心三率識別邏輯 |
-| DatabaseManager.java (1150-1232) | ✅ | ✅ | DB 快取層完整 |
+| FinancialDataRepository.java | ✅ | ✅ | DB 快取層完整 |
 | schema.sql | ✅ | ✅ | FINANCIAL_QUARTER_DATA 表 |
 | RadarScoreResult.java | ✅ | ✅ | FundamentalDetail 物件 |
 | RadarService.java (198-212) | ✅ | ✅ | 流程整合 |
@@ -174,7 +176,7 @@ MERGE INTO ... KEY(symbol, quarter_date)
 | 編譯 | ✅ | `mvn compile` 通過 |
 | DTO 定義 | ✅ | FinMindFinancialData.java |
 | 快取表設計 | ✅ | schema.sql |
-| 快取接口 | ✅ | DatabaseManager.java |
+| 快取接口 | ✅ | FinancialDataRepository.java |
 | 三率識別 | ✅ | AdvancedFundamentalService.java |
 | 流程整合 | ✅ | RadarService.java |
 | 前端展示 | ✅ | index.html (前期完成) |

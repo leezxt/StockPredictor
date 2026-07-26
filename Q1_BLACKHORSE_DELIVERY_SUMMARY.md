@@ -4,6 +4,9 @@
 **功能**: 一鍵自動掃描全市場，識別三率三升黑馬股  
 **狀態**: ✅ **編譯通過，即刻可用**
 
+> 現況更新（2026-07-26）：本文保留原始交付脈絡；市場清單目前由
+> `StockUniverseRepository` 查詢 `STOCK_UNIVERSE`，不再使用外部 API 或硬編碼 fallback。
+
 ---
 
 ## 🎉 實裝成果總結
@@ -19,7 +22,7 @@
 ✅ MarketService.java
    └─ 路徑: src/main/java/org/gtalent/MarketService.java
    └─ 大小: ~8KB
-   └─ 用途: 市場股票清單管理，支援快取與更新
+   └─ 用途: 從 STOCK_UNIVERSE 讀取並分類有效交易標的
 ```
 
 ### 實裝功能
@@ -43,9 +46,9 @@ HTTP GET /api/strategy/q1-black-horse
 StrategyController.scanQ1BlackHorses()
     │
     ├─ 1️⃣ MarketService.getAllSymbols()
-    │       ├─ 優先讀本地快取
-    │       ├─ 若不足，呼叫外部 API
-    │       └─ 回傳 ~1500 檔股票代號
+    │       ├─ 透過 StockUniverseRepository 查詢 active STOCK
+    │       ├─ 排除 ETF、BOND_ETF 與 ETN
+    │       └─ 無資料時回傳空清單並由 Controller 回報 503
     │
     ├─ 2️⃣ Loop 遍歷每檔股票
     │       for (String symbol : allSymbols)
@@ -140,16 +143,13 @@ public class MarketService {
     → 取得全市場股票代號
     
     public List<String> getSymbolsByType(String type)
-    → 按類型篩選 (未實裝)
+    → 支援 ALL、STOCK、ETF、ETN；ETF 包含 BOND_ETF
     
     public boolean isValidSymbol(String symbol)
     → 驗證股票代號
     
     Private 工具方法:
-    - getCachedSymbols()           // 讀本地快取
-    - fetchSymbolsFromExternalAPI()    // 呼叫外部 API
-    - cacheSymbols()               // 寫入快取
-    - getHardcodedFallbackSymbols()    // 備用清單
+    - getEtfSymbols()              // 合併 ETF 與 BOND_ETF，排序去重
 }
 ```
 
@@ -157,9 +157,7 @@ public class MarketService {
 
 ```
 getAllSymbols()
-  ├─ 優先: 本地 DB 快取
-  ├─ 降級: 外部 API (FinMind / TWSE / TPEX)
-  └─ 兜底: 硬編碼備用清單
+  └─ StockUniverseRepository.getAllSymbols("STOCK", null)
 ```
 
 ---
@@ -311,12 +309,12 @@ http://localhost:8080
 ### 短期 (實施立即)
 
 - ✅ 已內建 200ms 限流
-- ✅ 已支援本地快取
+- ✅ 已接入 STOCK_UNIVERSE Repository
 - ✅ 已支援自訂掃描（快速驗證）
 
 ### 中期 (後續優化)
 
-- [ ] 實裝 MarketService 的 DB 快取
+- [x] 實裝 MarketService 的 DB Repository 查詢（2026-07-26）
 - [ ] 支援非同步掃描 (@Async)
 - [ ] 前端進度條實時更新 (WebSocket)
 - [ ] 結果快取 (TTL 1 小時)
@@ -390,7 +388,7 @@ http://localhost:8080
 
 | 問題 | 原因 | 解決 |
 |-----|-----|------|
-| API 回傳 500 | 市場清單獲取失敗 | 檢查 MarketService 實裝 |
+| API 回傳 503 | STOCK_UNIVERSE 無有效個股 | 檢查匯入流程與 active／asset_type 資料 |
 | 掃描超時 | FinMind API 響應慢 | 檢查 API 狀態 / 增加逾時 |
 | errorCount 高 | API 限流 | 增加限流間隔 |
 | 結果為空 | 無符合條件 | 檢查財報資料 / 檢查時間範圍 |
@@ -407,12 +405,12 @@ http://localhost:8080
 
 2. **容錯設計**
    - 單檔失敗不影響全局
-   - 多層快取降級策略
+   - 市場清單不可用時明確回報 503，不以演示清單替代
    - 詳細的錯誤日誌
 
 3. **性能優化**
    - API 限流機制
-   - 本地快取支援
+   - STOCK_UNIVERSE 本地 Repository 查詢
    - 自訂掃描加速
 
 4. **易用性**

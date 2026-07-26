@@ -1,7 +1,6 @@
 package org.gtalent;
 
 import org.gtalent.dto.InstitutionalSyncResult;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -13,10 +12,17 @@ import java.util.logging.Logger;
 public class EnhancedInstitutionalService {
     private static final Logger logger = Logger.getLogger(EnhancedInstitutionalService.class.getName());
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private final TwseService twseService = new TwseService();
+    private final TwseService twseService;
+    private final FinMindClient finMindClient;
+    private final InstitutionalDataRepository institutionalDataRepository;
 
-    @Autowired
-    private FinMindClient finMindClient;
+    public EnhancedInstitutionalService(TwseService twseService,
+                                        FinMindClient finMindClient,
+                                        InstitutionalDataRepository institutionalDataRepository) {
+        this.twseService = twseService;
+        this.finMindClient = finMindClient;
+        this.institutionalDataRepository = institutionalDataRepository;
+    }
 
     /**
      * 計算法人合力指標 (外資 + 投信)
@@ -57,7 +63,8 @@ public class EnhancedInstitutionalService {
         if (symbol == null || symbol.isBlank() || days <= 0) {
             return new ArrayList<>();
         }
-        List<InstitutionalTrade> localData = DatabaseManager.getRecentInstitutionalTrades(symbol, days);
+        List<InstitutionalTrade> localData =
+                institutionalDataRepository.getRecentInstitutionalTrades(symbol, days);
         if (!localData.isEmpty()) {
             logger.info("📦 從本地數據庫獲取 " + symbol);
             return localData;
@@ -65,7 +72,7 @@ public class EnhancedInstitutionalService {
         List<InstitutionalTrade> twseData = twseService.fetchRecentInstitutionalData(symbol, Math.min(days, 30));
         if (twseData != null && !twseData.isEmpty()) {
             logger.info("🌐 從 TWSE 官網獲取 " + symbol);
-            DatabaseManager.saveInstitutionalTrades(symbol, twseData);
+            institutionalDataRepository.saveInstitutionalTrades(symbol, twseData);
             return twseData;
         }
         logger.info("🔄 TWSE 失敗，嘗試 FinMind API...");
@@ -82,7 +89,7 @@ public class EnhancedInstitutionalService {
                 trade.setDailyVolume(chip.getBuy() + chip.getSell());
                 result.add(trade);
             }
-            DatabaseManager.saveInstitutionalTrades(symbol, result);
+            institutionalDataRepository.saveInstitutionalTrades(symbol, result);
             return result;
         }
         logger.warning("⚠️  無法獲取 " + symbol + " 的數據");

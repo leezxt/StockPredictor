@@ -14,11 +14,22 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class BulkFetchService {
 
+    private final TwseService twseService;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
     private final AtomicBoolean running   = new AtomicBoolean(false);
     private final AtomicInteger total     = new AtomicInteger(0);
     private final AtomicInteger completed = new AtomicInteger(0);
     private final AtomicInteger saved     = new AtomicInteger(0);
     private volatile String     status    = "idle";  // idle | running | done | error
+
+    public BulkFetchService(TwseService twseService,
+                            StockUniverseRepository stockUniverseRepository,
+                            StockDataRepository stockDataRepository) {
+        this.twseService = twseService;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+    }
 
     /** 是否有任務正在執行 */
     public boolean isRunning() {
@@ -53,11 +64,10 @@ public class BulkFetchService {
                 saved.set(0);
 
                 // 1. 先確保股票池是最新的
-                TwseService twse = new TwseService();
-                twse.syncMarketUniverse();
+                twseService.syncMarketUniverse();
 
                 // 2. 取得所有 active 股票
-                List<String> symbols = DatabaseManager.getAllSymbols();
+                List<String> symbols = stockUniverseRepository.getAllSymbols();
                 total.set(symbols.size());
                 System.out.printf("[BulkFetch] 開始補抓 %d 支股票，各抓最近 %d 個月%n", symbols.size(), safeMonths);
 
@@ -72,9 +82,9 @@ public class BulkFetchService {
                         for (int m = 0; m < safeMonths; m++) {
                             String dateStr = String.format("%04d%02d01",
                                     cursor.getYear(), cursor.getMonthValue());
-                            List<String[]> monthData = twse.fetchMonthlyData(symbol, dateStr);
+                            List<String[]> monthData = twseService.fetchMonthlyData(symbol, dateStr);
                             if (monthData != null && !monthData.isEmpty()) {
-                                DatabaseManager.saveAllToDatabase(symbol, monthData);
+                                stockDataRepository.saveMonthlyHistory(symbol, monthData);
                                 saved.addAndGet(monthData.size());
                             }
                             cursor = cursor.minusMonths(1);
@@ -115,8 +125,7 @@ public class BulkFetchService {
      * @return 寫入的 row 數
      */
     public int bulkSaveTodayData() {
-        TwseService twse = new TwseService();
-        return twse.bulkFetchAndSaveTodayData();
+        return twseService.bulkFetchAndSaveTodayData();
     }
 
     public record ProgressSnapshot(String status, int total, int completed, int savedRows) {}

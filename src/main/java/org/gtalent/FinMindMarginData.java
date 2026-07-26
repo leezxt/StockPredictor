@@ -50,21 +50,27 @@ public class FinMindMarginData {
     private String stock_id;
 
     /** 今日融資買進 (張) */
+    @JsonProperty("MarginPurchaseBuy")
     private long MarginPurchaseBuy;
 
     /** 今日融資賣出 (張) */
+    @JsonProperty("MarginPurchaseSell")
     private long MarginPurchaseSell;
 
     /** 融資當日餘額 (張) - 報告日期之融資餘額 */
+    @JsonProperty("MarginPurchaseLimit")
     private long MarginPurchaseLimit;
 
     /** 今日融券買進 (張) */
+    @JsonProperty("ShortSaleBuy")
     private long ShortSaleBuy;
 
     /** 今日融券賣出 (張) */
+    @JsonProperty("ShortSaleSell")
     private long ShortSaleSell;
 
     /** 融券當日餘額 (張) - 報告日期之融券餘額 */
+    @JsonProperty("ShortSaleLimit")
     private long ShortSaleLimit;
 
     // ════════════════════════════════════════════════════════════

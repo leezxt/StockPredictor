@@ -1,7 +1,6 @@
 package org.gtalent;
 
 import org.gtalent.dto.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -15,14 +14,19 @@ public class AIPredictionService {
     private final EnhancedInstitutionalService enhancedInstitutionalService;
     private final VolumeAnalysisService volumeAnalysisService;
     private final DivergenceService divergenceService;
+    private final StockDataRepository stockDataRepository;
+    private final IndicatorCalculator indicatorCalculator;
 
-    @Autowired
     public AIPredictionService(EnhancedInstitutionalService enhancedInstitutionalService,
                                VolumeAnalysisService volumeAnalysisService,
-                               DivergenceService divergenceService) {
+                               DivergenceService divergenceService,
+                               StockDataRepository stockDataRepository,
+                               IndicatorCalculator indicatorCalculator) {
         this.enhancedInstitutionalService = enhancedInstitutionalService;
         this.volumeAnalysisService = volumeAnalysisService;
         this.divergenceService = divergenceService;
+        this.stockDataRepository = stockDataRepository;
+        this.indicatorCalculator = indicatorCalculator;
     }
 
     /**
@@ -81,8 +85,8 @@ public class AIPredictionService {
         double score = 50; // 中性起步
         
         // 布林通道
-        BollingerResult bb = IndicatorCalculator.calculateBollinger(symbol);
-        double price = DatabaseManager.getLatestPrice(symbol);
+        BollingerResult bb = indicatorCalculator.calculateBollinger(symbol);
+        double price = stockDataRepository.getLatestPrice(symbol);
         if (bb.getUpperBand() > 0) {
             if (price >= bb.getUpperBand()) {
                 score -= 10;
@@ -97,7 +101,7 @@ public class AIPredictionService {
         }
 
         // 一目均衡表
-        IchimokuResult ichi = IndicatorCalculator.calculateIchimoku(symbol);
+        IchimokuResult ichi = indicatorCalculator.calculateIchimoku(symbol);
         if (ichi.getTenkanSen() > 0) {
             if (ichi.getTenkanSen() > ichi.getKijunSen()) {
                 score += 15;

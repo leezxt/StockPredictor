@@ -1,0 +1,51 @@
+name: stockpredictor-postgresql
+
+services:
+  database:
+    image: postgres:17-alpine
+    container_name: stockpredictor-postgresql
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-stockpredictor_cutover}"
+      POSTGRES_USER: "${POSTGRES_USER:-stockpredictor}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - stockpredictor-postgresql-cutover-data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stockpredictor:postgresql-cutover
+    container_name: stockpredictor
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "19090:19090"
+    environment:
+      SERVER_PORT: "19090"
+      RUNNING_IN_DOCKER: "true"
+      APP_BROWSER_AUTO_OPEN: "false"
+      APP_SCHEDULING_ENABLED: "true"
+      SCANNER_NEWS_REACTION_ENABLED: "false"
+      SPRING_PROFILES_ACTIVE: "postgresql"
+      POSTGRES_JDBC_URL: "jdbc:postgresql://database:5432/${POSTGRES_DB:-stockpredictor_cutover}"
+      STOCKPREDICTOR_JDBC_URL: "jdbc:postgresql://database:5432/${POSTGRES_DB:-stockpredictor_cutover}"
+      POSTGRES_USER: "${POSTGRES_USER:-stockpredictor}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      FINMIND_API_TOKEN: "${FINMIND_API_TOKEN:-}"
+
+volumes:
+  stockpredictor-postgresql-cutover-data:

@@ -1,6 +1,5 @@
 package org.gtalent;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +15,10 @@ import java.util.stream.Collectors;
 
 @Service
 public class ScannerService {
+    private final IndicatorCalculator indicatorCalculator;
+    private final StockUniverseRepository stockUniverseRepository;
+    private final StockDataRepository stockDataRepository;
+    private final InstitutionalDataRepository institutionalDataRepository;
 
     @Value("${scanner.volume-churn.ratio-threshold:0.45}")
     private double volumeChurnRatioThreshold;
@@ -212,26 +215,40 @@ public class ScannerService {
     @Value("${scanner.strategy.etn.institutional-multiplier:0.80}")
     private double etnInstitutionalMultiplier;
 
-    @Autowired
-    private ScanHistoryRepository historyRepository;
+    private final ScanHistoryRepository historyRepository;
 
-    @Autowired
-    private InstitutionalService institutionalService;
+    private final InstitutionalService institutionalService;
 
-    @Autowired
-    private NewsReactionService newsReactionService;
+    private final NewsReactionService newsReactionService;
 
-    @Autowired
-    private ScoreEngine scoreEngine;
+    private final ScoreEngine scoreEngine;
 
-    @Autowired
-    private FinMindClient finMindClient;
+    private final FinMindClient finMindClient;
 
     private final Map<String, CachedNewsReactionScore> newsReactionCache = new ConcurrentHashMap<>();
 
-    private final TwseService twseService = new TwseService();
+    private final TwseService twseService;
 
-    public ScannerService() {
+    public ScannerService(TwseService twseService,
+                          IndicatorCalculator indicatorCalculator,
+                          StockUniverseRepository stockUniverseRepository,
+                          StockDataRepository stockDataRepository,
+                          InstitutionalDataRepository institutionalDataRepository,
+                          ScanHistoryRepository historyRepository,
+                          InstitutionalService institutionalService,
+                          NewsReactionService newsReactionService,
+                          ScoreEngine scoreEngine,
+                          FinMindClient finMindClient) {
+        this.twseService = twseService;
+        this.indicatorCalculator = indicatorCalculator;
+        this.stockUniverseRepository = stockUniverseRepository;
+        this.stockDataRepository = stockDataRepository;
+        this.institutionalDataRepository = institutionalDataRepository;
+        this.historyRepository = historyRepository;
+        this.institutionalService = institutionalService;
+        this.newsReactionService = newsReactionService;
+        this.scoreEngine = scoreEngine;
+        this.finMindClient = finMindClient;
     }
 
     /** 掃描時要求的最低 STOCK_DATA 筆數（用於 MA20 計算 + 5 日前斜率） */
@@ -247,15 +264,15 @@ public class ScannerService {
      * 掃描特定均線型態
      */
     public List<ScannedResult> scanMAPatterns(String type) {
-        List<String> allSymbols = DatabaseManager.getAllSymbolsWithData(65, null, null);
+        List<String> allSymbols = stockUniverseRepository.getAllSymbolsWithData(65, null, null);
         List<ScannedResult> results = new ArrayList<>();
 
         for (String symbol : allSymbols) {
-            double price = DatabaseManager.getLatestPrice(symbol);
-            double ma5 = DatabaseManager.calculateMA(symbol, 5);
-            double ma10 = DatabaseManager.calculateMA(symbol, 10);
-            double ma20 = DatabaseManager.calculateMA(symbol, 20);
-            double ma60 = DatabaseManager.calculateMA(symbol, 60);
+            double price = stockDataRepository.getLatestPrice(symbol);
+            double ma5 = stockDataRepository.calculateMA(symbol, 5);
+            double ma10 = stockDataRepository.calculateMA(symbol, 10);
+            double ma20 = stockDataRepository.calculateMA(symbol, 20);
+            double ma60 = stockDataRepository.calculateMA(symbol, 60);
 
             if (ma5 <= 0 || ma10 <= 0 || ma20 <= 0 || ma60 <= 0) continue;
 
@@ -320,7 +337,8 @@ public class ScannerService {
         // ── 只掃描在 STOCK_DATA 中有足夠歷史資料的代碼 ──────────────────
         // getAllSymbols 可能回傳數千個 STOCK_UNIVERSE 成員，但大多數沒有 STOCK_DATA。
         // getAllSymbolsWithData 藉由 HAVING COUNT(*) >= 25 在 DB 層過濾，大幅減少無效計算。
-        List<String> allSymbols = DatabaseManager.getAllSymbolsWithData(SCAN_MIN_HISTORY_DAYS, assetType, market);
+        List<String> allSymbols = stockUniverseRepository.getAllSymbolsWithData(
+                SCAN_MIN_HISTORY_DAYS, assetType, market);
         ScanProgressListener safeProgressListener = progressListener == null
                 ? (completed, total, symbol) -> {
                 }
@@ -348,13 +366,13 @@ public class ScannerService {
                     continue; // 低於最低門檻，完全略過（不建 ScannedResult）
                 }
 
-                double rsi = IndicatorCalculator.calculateRSI(symbol, 14);
-                StockUniverseEntry universeEntry = DatabaseManager.getStockUniverseEntry(symbol);
+                double rsi = indicatorCalculator.calculateRSI(symbol, 14);
+                StockUniverseEntry universeEntry = stockUniverseRepository.getStockUniverseEntry(symbol);
                 AssetStrategyProfile assetProfile = resolveAssetStrategy(symbol);
-                double price = DatabaseManager.getLatestPrice(symbol);
-                double ma5  = DatabaseManager.calculateMA(symbol, 5);
-                double ma20 = DatabaseManager.calculateMA(symbol, 20);
-                double ma60 = DatabaseManager.calculateMA(symbol, 60);
+                double price = stockDataRepository.getLatestPrice(symbol);
+                double ma5  = stockDataRepository.calculateMA(symbol, 5);
+                double ma20 = stockDataRepository.calculateMA(symbol, 20);
+                double ma60 = stockDataRepository.calculateMA(symbol, 60);
                 VolumeQuality volumeQuality = calculateVolumeQuality(symbol);
                 boolean churnRisk = isVolumeChurnRisk(volumeQuality.realToRawRatio());
 
@@ -415,13 +433,13 @@ public class ScannerService {
      * 避免掃描時對每支股票逐一發 HTTP 請求。
      */
     public void refreshInstitutionalData() {
-        List<String> allSymbols = DatabaseManager.getAllSymbols();
+        List<String> allSymbols = stockUniverseRepository.getAllSymbols();
         for (String symbol : allSymbols) {
             if (symbol == null || symbol.isBlank()) continue;
             try {
                 List<InstitutionalTrade> recent = twseService.fetchRecentInstitutionalData(symbol, 20);
                 if (!recent.isEmpty()) {
-                    DatabaseManager.saveInstitutionalTrades(symbol, recent);
+                    institutionalDataRepository.saveInstitutionalTrades(symbol, recent);
                 }
             } catch (Exception e) {
                 System.err.println("[ScannerService] 法人資料補抓失敗 " + symbol + ": " + e.getMessage());
@@ -475,14 +493,14 @@ public class ScannerService {
                 totalScore += scaleScore(20, assetProfile.trendMultiplier());
             }
         }
-        double adx = IndicatorCalculator.calculateADX(symbol, Math.max(5, adxPeriod));
+        double adx = indicatorCalculator.calculateADX(symbol, Math.max(5, adxPeriod));
         if (adx >= adxStrongThreshold) {
             totalScore += scaleScore(adxStrongBonus, assetProfile.trendMultiplier());
         } else if (adx >= adxModerateThreshold) {
             totalScore += scaleScore(adxModerateBonus, assetProfile.trendMultiplier());
         }
-        double latestPrice = DatabaseManager.getLatestPrice(symbol);
-        double atr = IndicatorCalculator.calculateATR(symbol, Math.max(5, atrPeriod));
+        double latestPrice = stockDataRepository.getLatestPrice(symbol);
+        double atr = indicatorCalculator.calculateATR(symbol, Math.max(5, atrPeriod));
         if (latestPrice > 0 && atr > 0) {
             double atrRatio = atr / latestPrice;
             if (atrRatio > 0 && atrRatio <= atrHealthyRatio) {
@@ -491,7 +509,7 @@ public class ScannerService {
                 totalScore -= scaleScore(atrOverheatPenalty, assetProfile.trendMultiplier());
             }
         }
-        int superTrendDirection = IndicatorCalculator.calculateSuperTrendDirection(
+        int superTrendDirection = indicatorCalculator.calculateSuperTrendDirection(
                 symbol, Math.max(5, superTrendPeriod), Math.max(1.0, superTrendMultiplier)
         );
         if (superTrendDirection > 0) {
@@ -499,7 +517,7 @@ public class ScannerService {
         } else if (superTrendDirection < 0) {
             totalScore -= scaleScore(superTrendBearishPenalty, assetProfile.trendMultiplier());
         }
-        double donchianPosition = IndicatorCalculator.calculateDonchianPosition(symbol, Math.max(10, donchianPeriod));
+        double donchianPosition = indicatorCalculator.calculateDonchianPosition(symbol, Math.max(10, donchianPeriod));
         if (donchianPosition >= 0.90) {
             totalScore += scaleScore(donchianBreakoutBonus, assetProfile.trendMultiplier());
         } else if (donchianPosition <= 0.10) {
@@ -515,7 +533,7 @@ public class ScannerService {
         } else if (rsi >= 80) {
             totalScore -= scaleScore(10, assetProfile.momentumMultiplier()); // 扣分項目
         }
-        double obvStrength = IndicatorCalculator.calculateOBV(symbol, Math.max(5, obvLookbackDays));
+        double obvStrength = indicatorCalculator.calculateOBV(symbol, Math.max(5, obvLookbackDays));
         if (obvStrength >= obvStrongThreshold) {
             totalScore += scaleScore(obvStrongBonus, assetProfile.momentumMultiplier());
         } else if (obvStrength >= obvModerateThreshold) {
@@ -523,19 +541,19 @@ public class ScannerService {
         } else if (obvStrength <= -obvModerateThreshold) {
             totalScore -= scaleScore(obvWeakPenalty, assetProfile.momentumMultiplier());
         }
-        double cci = IndicatorCalculator.calculateCCI(symbol, Math.max(10, cciPeriod));
+        double cci = indicatorCalculator.calculateCCI(symbol, Math.max(10, cciPeriod));
         if (cci >= 100) {
             totalScore += scaleScore(cciStrongBonus, assetProfile.momentumMultiplier());
         } else if (cci <= -100) {
             totalScore -= scaleScore(cciWeakPenalty, assetProfile.momentumMultiplier());
         }
-        double williamsR = IndicatorCalculator.calculateWilliamsR(symbol, Math.max(10, williamsRPeriod));
+        double williamsR = indicatorCalculator.calculateWilliamsR(symbol, Math.max(10, williamsRPeriod));
         if (williamsR > -30) {
             totalScore -= scaleScore(williamsRExtremePenalty, assetProfile.momentumMultiplier());
         } else if (williamsR >= -85 && williamsR <= -55) {
             totalScore += scaleScore(williamsRReboundBonus, assetProfile.momentumMultiplier());
         }
-        double aroonOsc = IndicatorCalculator.calculateAroonOscillator(symbol, Math.max(12, aroonPeriod));
+        double aroonOsc = indicatorCalculator.calculateAroonOscillator(symbol, Math.max(12, aroonPeriod));
         if (aroonOsc >= 35) {
             totalScore += scaleScore(aroonStrongBonus, assetProfile.momentumMultiplier());
         } else if (aroonOsc <= -35) {
@@ -549,7 +567,7 @@ public class ScannerService {
         } else if (volRatio > 1.2) {
             totalScore += scaleScore(15, assetProfile.volumeMultiplier());
         }
-        double mfi = IndicatorCalculator.calculateMFI(symbol, Math.max(5, mfiPeriod));
+        double mfi = indicatorCalculator.calculateMFI(symbol, Math.max(5, mfiPeriod));
         if (mfi >= 45 && mfi <= 75) {
             totalScore += scaleScore(mfiHealthyBonus, assetProfile.volumeMultiplier());
         } else if (mfi >= 85) {
@@ -557,7 +575,7 @@ public class ScannerService {
         } else if (mfi <= 20) {
             totalScore += scaleScore(mfiOversoldBonus, assetProfile.volumeMultiplier());
         }
-        double cmf = IndicatorCalculator.calculateCMF(symbol, Math.max(10, cmfPeriod));
+        double cmf = indicatorCalculator.calculateCMF(symbol, Math.max(10, cmfPeriod));
         if (cmf >= cmfPositiveThreshold) {
             totalScore += scaleScore(cmfPositiveBonus, assetProfile.volumeMultiplier());
         } else if (cmf <= cmfNegativeThreshold) {
@@ -624,7 +642,7 @@ public class ScannerService {
     }
 
     private int calculateInstitutionalBonus(String symbol) {
-        List<InstitutionalTrade> data = DatabaseManager.getRecentInstitutionalTrades(symbol, 10);
+        List<InstitutionalTrade> data = institutionalDataRepository.getRecentInstitutionalTrades(symbol, 10);
         if (data.isEmpty()) {
             return 0;
         }
@@ -638,7 +656,7 @@ public class ScannerService {
         }
 
         // 買盤增溫 (15分)
-        double avg5 = DatabaseManager.getAverageInstitutionalNetBuy(symbol, 5);
+        double avg5 = institutionalDataRepository.getAverageInstitutionalNetBuy(symbol, 5);
         if (latest.getTotalNetBuy() > avg5) {
             bonus += 15;
         }
@@ -654,16 +672,16 @@ public class ScannerService {
     }
 
     private double calculateMA(String symbol, int days) {
-        return DatabaseManager.calculateMA(symbol, days);
+        return stockDataRepository.calculateMA(symbol, days);
     }
 
     private double calculateRSI(String symbol, int period) {
-        return IndicatorCalculator.calculateRSI(symbol, period);
+        return indicatorCalculator.calculateRSI(symbol, period);
     }
 
     private double getHistoricalMA(String symbol, int period, int daysAgo) {
         int needed = period + daysAgo;
-        List<StockDataPoint> points = DatabaseManager.getFullHistory(symbol, needed + 20);
+        List<StockDataPoint> points = stockDataRepository.getFullHistory(symbol, needed + 20);
         if (points.size() < needed) {
             return 0.0;
         }
@@ -691,8 +709,8 @@ public class ScannerService {
             return quality.realVolumeRatioForScoring();
         }
 
-        long volumeToday = DatabaseManager.getLatestVolume(symbol);
-        long volumeMA5 = DatabaseManager.calculateVolumeMA(symbol, 5);
+        long volumeToday = stockDataRepository.getLatestVolume(symbol);
+        long volumeMA5 = stockDataRepository.calculateVolumeMA(symbol, 5);
         if (volumeToday <= 0 || volumeMA5 <= 0) {
             return 0.0;
         }
@@ -700,8 +718,8 @@ public class ScannerService {
     }
 
     private VolumeQuality calculateVolumeQuality(String symbol) {
-        long rawVolumeToday = Math.max(0L, DatabaseManager.getLatestVolume(symbol));
-        List<FinMindDayTradingData> dayTradingRows = DatabaseManager.getDayTradingHistory(symbol, 5);
+        long rawVolumeToday = Math.max(0L, stockDataRepository.getLatestVolume(symbol));
+        List<FinMindDayTradingData> dayTradingRows = institutionalDataRepository.getDayTradingHistory(symbol, 5);
         if (dayTradingRows.isEmpty()) {
             return new VolumeQuality(0.0, 0.0, 1.0);
         }
@@ -710,7 +728,7 @@ public class ScannerService {
                 .filter(row -> row != null && row.getDate() != null)
                 .collect(Collectors.toMap(FinMindDayTradingData::getDate, row -> row, (a, b) -> b));
 
-        List<StockDataPoint> priceRows = DatabaseManager.getFullHistory(symbol, 5);
+        List<StockDataPoint> priceRows = stockDataRepository.getFullHistory(symbol, 5);
         if (priceRows.isEmpty()) {
             return new VolumeQuality(0.0, 0.0, 1.0);
         }
@@ -736,7 +754,7 @@ public class ScannerService {
     }
 
     private AssetStrategyProfile resolveAssetStrategy(String symbol) {
-        StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(symbol);
+        StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(symbol);
         String assetType = entry == null ? "STOCK" : normalizeAssetType(entry.getAssetType());
         return switch (assetType) {
             case "ETF" -> new AssetStrategyProfile(assetType, etfTrendMultiplier, etfMomentumMultiplier, etfVolumeMultiplier,
@@ -804,7 +822,7 @@ public class ScannerService {
     }
 
     private int calculateEtfLiquidityScore(String symbol) {
-        List<StockDataPoint> history = DatabaseManager.getFullHistory(symbol, 12);
+        List<StockDataPoint> history = stockDataRepository.getFullHistory(symbol, 12);
         if (history.size() < 5) {
             return 0;
         }
@@ -888,7 +906,7 @@ public class ScannerService {
                 navByDate.put(row.getDate(), row.getNav());
             }
 
-            List<StockDataPoint> priceRows = DatabaseManager.getFullHistory(symbol, 80);
+            List<StockDataPoint> priceRows = stockDataRepository.getFullHistory(symbol, 80);
             List<Double> errors = new ArrayList<>();
             for (StockDataPoint row : priceRows) {
                 Double nav = navByDate.get(row.date);
@@ -959,7 +977,7 @@ public class ScannerService {
                     navByDate.put(row.getDate(), row.getNav());
                 }
             }
-            List<StockDataPoint> priceRows = DatabaseManager.getFullHistory(symbol, 140);
+            List<StockDataPoint> priceRows = stockDataRepository.getFullHistory(symbol, 140);
             List<Double> alignedClose = new ArrayList<>();
             List<Double> alignedNav = new ArrayList<>();
             for (StockDataPoint row : priceRows) {
@@ -1009,8 +1027,8 @@ public class ScannerService {
             return precomputedIndustryRsBonusMap.getOrDefault(symbol, 0);
         }
 
-        StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(symbol);
-        List<String> peers = DatabaseManager.getAllSymbolsWithData(
+        StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(symbol);
+        List<String> peers = stockUniverseRepository.getAllSymbolsWithData(
                 Math.max(SCAN_MIN_HISTORY_DAYS, Math.max(25, industryRsLookbackDays + 1)),
                 entry == null ? null : entry.getAssetType(),
                 entry == null ? null : entry.getMarket()
@@ -1036,7 +1054,7 @@ public class ScannerService {
             if (symbol == null || symbol.isBlank()) {
                 continue;
             }
-            StockUniverseEntry entry = DatabaseManager.getStockUniverseEntry(symbol);
+            StockUniverseEntry entry = stockUniverseRepository.getStockUniverseEntry(symbol);
             String bucket = resolveIndustryBucket(symbol, entry);
             double ret = calculateLookbackReturn(symbol, lookbackDays);
             if (Double.isNaN(ret)) {
@@ -1085,7 +1103,7 @@ public class ScannerService {
     }
 
     private double calculateLookbackReturn(String symbol, int lookbackDays) {
-        List<StockDataPoint> history = DatabaseManager.getFullHistory(symbol, lookbackDays + 1);
+        List<StockDataPoint> history = stockDataRepository.getFullHistory(symbol, lookbackDays + 1);
         if (history.size() < lookbackDays + 1) {
             return Double.NaN;
         }
@@ -1147,8 +1165,8 @@ public class ScannerService {
                                         String strategyDescription) {}
 
     private boolean isStrongerThanMarket(String symbol) {
-        List<StockDataPoint> stock = DatabaseManager.getFullHistory(symbol, 30);
-        List<StockDataPoint> market = DatabaseManager.getFullHistory("0050", 30);
+        List<StockDataPoint> stock = stockDataRepository.getFullHistory(symbol, 30);
+        List<StockDataPoint> market = stockDataRepository.getFullHistory("0050", 30);
         if (stock.size() < 21 || market.size() < 21) {
             return false;
         }
@@ -1185,7 +1203,7 @@ public class ScannerService {
      * @param topN 要回傳的最大筆數
      */
     public List<Map<String, Object>> getTopTrustStocks(int topN) {
-        List<String> allSymbols = DatabaseManager.getAllSymbols();
+        List<String> allSymbols = stockUniverseRepository.getAllSymbols();
         List<Map<String, Object>> candidates = new ArrayList<>();
         Map<String, Integer> industryRsBonusMap = buildIndustryRelativeStrengthBonusMap(allSymbols);
 
@@ -1195,7 +1213,8 @@ public class ScannerService {
             }
 
             // 預先過濾：本地無投信資料的股票直接跳過，避免 InstitutionalService 觸發遠端 TWSE/FinMind fetch
-            List<InstitutionalTrade> localTrades = DatabaseManager.getRecentInstitutionalTrades(symbol, 10);
+            List<InstitutionalTrade> localTrades =
+                    institutionalDataRepository.getRecentInstitutionalTrades(symbol, 10);
             if (localTrades.isEmpty()) {
                 continue;
             }
@@ -1206,14 +1225,14 @@ public class ScannerService {
                     continue; // 低於門檻，略過
                 }
 
-                double price       = DatabaseManager.getLatestPrice(symbol);
-                double rsi         = IndicatorCalculator.calculateRSI(symbol, 14);
+                double price       = stockDataRepository.getLatestPrice(symbol);
+                double rsi         = indicatorCalculator.calculateRSI(symbol, 14);
                 int    totalScore  = calculateDetailedScore(symbol, industryRsBonusMap);
-                int    consecutive = DatabaseManager.countConsecutiveTrustBuyDays(symbol, 10);
+                int    consecutive = institutionalDataRepository.countConsecutiveTrustBuyDays(symbol, 10);
                 double lockRatio   = institutionalService.getLockRatio(symbol);
 
                 // 計算漲跌幅
-                List<StockDataPoint> recent2 = DatabaseManager.getRecentHistory(symbol, 2);
+                List<StockDataPoint> recent2 = stockDataRepository.getRecentHistory(symbol, 2);
                 double changePercent = 0.0;
                 if (recent2.size() >= 2) {
                     double todayPrice = recent2.get(1).c > 0 ? recent2.get(1).c : recent2.get(1).price;

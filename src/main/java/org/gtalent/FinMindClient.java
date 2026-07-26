@@ -2,7 +2,6 @@ package org.gtalent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -54,11 +53,14 @@ public class FinMindClient {
     @Value("${twse.etf.nav.urls:https://www.twse.com.tw/rwd/zh/ETF/etfQuote?response=json&stockNo=%s,https://www.twse.com.tw/rwd/zh/ETF/etfDiv?response=json&stockNo=%s,https://www.tpex.org.tw/openapi/v1/tpex_etf_nav}")
     private String twseEtfNavUrlTemplates;
 
-    @Autowired
-    private RestTemplate restTemplate;
+    private final RestTemplate restTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private volatile String cachedToken;
+
+    public FinMindClient(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public static class EtfPremiumResult {
         private final Double ratio;
@@ -316,20 +318,33 @@ public class FinMindClient {
      * @return 數據列表
      */
     private <T> List<T> fetchGenericData(String symbol, String startDate, FinMindDataset dataset, Class<T> responseType) {
-        FinMindResponse body = requestDatasetAsResponse(dataset.getDatasetName(), symbol, startDate, true);
-        if (body == null) {
-            return new ArrayList<>();
-        }
-
-        logger.info("✅ [FinMind] 成功獲取 " + dataset.getDescription() + ": 狀態碼=" + body.getStatus() +
-                ", 資料筆數=" + (body.getData() != null ? body.getData().size() : 0));
-        if (body.getData() == null) {
+        if (!hasText(symbol) || !hasText(startDate) || dataset == null || responseType == null) {
             return new ArrayList<>();
         }
 
         List<T> converted = new ArrayList<>();
-        for (Object item : body.getData()) {
-            converted.add(objectMapper.convertValue(item, responseType));
+        try {
+            String payload = requestDatasetRaw(dataset.getDatasetName(), symbol, startDate, true);
+            if (payload == null) {
+                return converted;
+            }
+
+            JsonNode root = objectMapper.readTree(payload);
+            JsonNode dataNode = root.path("data");
+            if (!dataNode.isArray()) {
+                return converted;
+            }
+
+            for (JsonNode row : dataNode) {
+                T item = objectMapper.treeToValue(row, responseType);
+                if (item != null) {
+                    converted.add(item);
+                }
+            }
+            logger.info("✅ [FinMind] 成功獲取 " + dataset.getDescription() + ": 狀態碼="
+                    + root.path("status").asInt(0) + ", 資料筆數=" + converted.size());
+        } catch (Exception e) {
+            logger.severe("🚨 [FinMind] 解析 " + dataset.getDescription() + " 失敗: " + e.getMessage());
         }
         return converted;
     }
@@ -1189,41 +1204,36 @@ public class FinMindClient {
      */
     @Cacheable(value = "finmind.nav", key = "#symbol + ':' + #startDate", cacheManager = "historicalDataCacheManager")
     public List<FinMindNavData> fetchNavData(String symbol, String startDate) {
+        if (!hasText(symbol) || !hasText(startDate)) {
+            return List.of();
+        }
         try {
             logger.info("🔗 [FinMind] 發送 NAV 資料請求: symbol=" + symbol + ", startDate=" + startDate);
 
-            String token = resolveToken(false);
-            String url = UriComponentsBuilder.fromHttpUrl(apiUrl)
-                    .queryParam("dataset", "TaiwanETFNavigation")
-                    .queryParam("data_id", symbol)
-                    .queryParam("start_date", startDate)
-                    .queryParam("token", token)
-                    .toUriString();
-
-            ResponseEntity<FinMindResponse> response = restTemplate.getForEntity(url, FinMindResponse.class);
-
-            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-                logger.warning("⚠️ [FinMind] NAV 回傳狀態異常: " + response.getStatusCode());
+            String payload = requestDatasetRaw("TaiwanETFNavigation", symbol, startDate, true);
+            if (payload == null) {
                 return List.of();
             }
 
-            FinMindResponse body = response.getBody();
-            List<FinMindNavData> navList = new ArrayList<>();
+            JsonNode dataNode = objectMapper.readTree(payload).path("data");
+            if (!dataNode.isArray()) {
+                return List.of();
+            }
 
-            if (body.getData() != null && !body.getData().isEmpty()) {
-                for (Object item : body.getData()) {
-                    if (item instanceof Map) {
-                        Map<String, Object> map = (Map<String, Object>) item;
-                        FinMindNavData nav = new FinMindNavData();
-                        nav.setDate((String) map.get("date"));
+            List<FinMindNavData> navList = new ArrayList<>();
+            for (JsonNode row : dataNode) {
+                FinMindNavData nav = objectMapper.treeToValue(row, FinMindNavData.class);
+                if (nav != null) {
+                    if (!hasText(nav.getStockId())) {
                         nav.setStockId(symbol);
-                        nav.setNav(((Number) map.get("NAV")).doubleValue());
-                        navList.add(nav);
                     }
+                    navList.add(nav);
                 }
             }
 
-            navList.sort(java.util.Comparator.comparing(FinMindNavData::getDate));
+            navList.sort(java.util.Comparator.comparing(
+                    FinMindNavData::getDate,
+                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
             return navList;
 
         } catch (Exception e) {

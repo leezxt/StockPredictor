@@ -11,9 +11,6 @@ public class Main {
     public static void main(String[] args) {
         AppRuntime.initializeSystemProperties();
 
-        // 初始化數據庫
-        DatabaseManager.initDatabase();
-
         // 啟動 Spring Boot 應用
         ConfigurableApplicationContext context = SpringApplication.run(Main.class, args);
 
